@@ -1,38 +1,47 @@
 "use client";
-import { useProgress } from "@react-three/drei";
+import { useState } from 'react';
 
-export default function LoadingScreen({ progress: apiProgress }: { progress: number }) {
-  const { progress: activeProgress } = useProgress();
+export default function LoadingScreen({ progress, timedOut, isLoaded }: any) {
+  const [manualEntry, setManualEntry] = useState(false);
   
-  // Use the higher of the two progress values
-  const displayProgress = Math.max(apiProgress, activeProgress);
-  const isFinished = displayProgress >= 100;
+  if (isLoaded || manualEntry) return null;
 
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#050505',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      color: '#22c55e', fontFamily: 'monospace',
-      transition: 'transform 1s cubic-bezier(0.85, 0, 0.15, 1)',
-      transform: isFinished ? 'translateY(-100%)' : 'translateY(0)'
+      color: '#22c55e', fontFamily: 'monospace'
     }}>
       <div style={{ width: '280px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '1.8rem', fontWeight: '900', letterSpacing: '-1px', marginBottom: '10px', color: '#fff' }}>GIT WORLD</h1>
         <p style={{ fontSize: '10px', color: '#22c55e', marginBottom: '20px', letterSpacing: '2px' }}>
-            {isFinished ? 'SYSTEMS READY' : 'INITIALIZING ENGINE'}
+            {progress < 100 ? 'CONNECTING_GRID' : 'STABILIZING_REALITY'}
         </p>
         
         <div style={{ height: '2px', width: '100%', backgroundColor: '#111', borderRadius: '10px', overflow: 'hidden' }}>
           <div style={{ 
             height: '100%', backgroundColor: '#22c55e', boxShadow: '0 0 15px #22c55e',
-            width: `${displayProgress}%`, transition: 'width 0.4s ease-in-out' 
+            width: `${Math.max(progress, 10)}%`, transition: 'width 0.5s ease-in-out' 
           }} />
         </div>
+
+        {timedOut && !isLoaded && (
+          <button 
+            onClick={() => setManualEntry(true)}
+            style={{
+              marginTop: '40px', padding: '12px 24px', backgroundColor: '#22c55e', color: '#000',
+              border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer',
+              fontSize: '12px', letterSpacing: '1px'
+            }}
+          >
+            ENTER MANUALLY
+          </button>
+        )}
         
         <div style={{ marginTop: '30px', fontSize: '9px', color: '#444', textAlign: 'left', lineHeight: '1.6' }}>
-          <div>{">"} ASSET_STREAM... {displayProgress > 20 ? 'OK' : '...'}</div>
-          <div>{">"} GPU_ALLOCATION... {displayProgress > 60 ? 'OK' : '...'}</div>
-          <div>{">"} READY_FOR_DEBARKATION... {isFinished ? 'OK' : '...'}</div>
+          <div>{">"} DATA_SOURCE... {progress > 10 ? 'OK' : '...'}</div>
+          <div>{">"} GPU_PIPE... {progress > 60 ? 'OK' : '...'}</div>
+          <div>{">"} SHADER_CACHE... {progress === 100 ? 'OK' : '...'}</div>
         </div>
       </div>
     </div>

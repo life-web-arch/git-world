@@ -21,31 +21,40 @@ export default function WorldClient({ username }: { username: string }) {
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const room = useRef<any>(null);
 
   useEffect(() => {
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
     
+    // Failsafe: If after 10 seconds we are still loading, show a manual start button
+    const timer = setTimeout(() => setTimedOut(true), 10000);
+
     if (typeof window !== 'undefined') {
       room.current = supabase.channel('presence').on('broadcast', { event: 'move' }, ({ payload }: any) => {
         if (payload?.username) setPlayers(prev => ({ ...prev, [payload.username]: payload }));
       }).subscribe();
     }
-    return () => { room.current?.unsubscribe(); };
+    return () => { 
+      clearTimeout(timer);
+      room.current?.unsubscribe(); 
+    };
   }, []);
 
-  // The loader stays visible until progress is high and data is here
-  const showLoader = !mounted || !devs || progress < 100;
+  // UI is visible only when data is here and mounting is done
+  const canShowWorld = mounted && devs;
+  const isFullyLoaded = !active && progress === 100;
 
   return (
     <div style={{ width: '100vw', height: '100vh', backgroundColor: '#050505', position: 'fixed', inset: 0, overflow: 'hidden' }}>
       
-      <LoadingScreen progress={progress} />
+      {/* Loader Overlays everything */}
+      <LoadingScreen progress={progress} timedOut={timedOut} isLoaded={isFullyLoaded && devs} />
 
-      {mounted && devs && (
+      {canShowWorld && (
         <EcctrlProvider>
-          <div style={{ opacity: showLoader ? 0 : 1, transition: 'opacity 1s ease-in-out' }}>
+          <div style={{ visibility: isFullyLoaded ? 'visible' : 'hidden' }}>
             <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
             <Chat username={username} />
             {isTouch && <div style={{ position: 'fixed', bottom: '40px', left: '40px', zIndex: 100, transform: 'scale(1.2)' }}><EcctrlJoystick /></div>}
@@ -53,8 +62,6 @@ export default function WorldClient({ username }: { username: string }) {
 
           <Canvas shadows camera={{ fov: 45, position: [0, 20, 50] }} dpr={[1, 1.5]}>
             <color attach="background" args={['#050505']} />
-            <fog attach="fog" args={['#050505', 50, 250]} />
-            
             <Suspense fallback={null}>
               <Sky distance={450000} sunPosition={[0, -1, 0]} inclination={0} azimuth={0.25} />
               <Stars radius={100} depth={50} count={1000} factor={4} saturation={0} fade speed={0.5} />
