@@ -1,160 +1,111 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Sky, Environment, Text, Grid, Stars, Image } from "@react-three/drei";
-import Ecctrl, { EcctrlJoystick } from "ecctrl";
+import { Sky, Environment, Text, Grid, Stars, Image, Float } from "@react-three/drei";
+import Ecctrl, { EcctrlJoystick, EcctrlProvider } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
 import * as THREE from "three";
-import { useFrame } from "@react-three/fiber";
-import { Rocket } from "lucide-react";
+import HUD from "./HUD";
 import Chat from "./Chat";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-function FullScreenLoader() {
-  return (
-    <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center z-[1000]">
-      <div className="text-center text-white font-mono">
-        <div className="text-3xl font-bold text-green-400 mb-2">Entering Git World</div>
-        <div className="text-zinc-400">Fetching developer data...</div>
-        <div className="mt-4 flex justify-center">
-            <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse delay-0"></div>
-            <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse delay-200 mx-2"></div>
-            <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse delay-400"></div>
-        </div>
-      </div>
-    </div>
-  );
-}
+function DevBuilding({ dev, position }: any) {
+  const height = Math.max(5, (dev.contributions || 0) / 100);
+  const width = Math.max(4, Math.min(20, (dev.repos || 0) / 2));
+  const isTopDev = dev.contributions > 1000;
 
-function PlayerTracker({ username, room }: { username: string, room: any }) {
-  const ref = useRef<THREE.Group>(null);
-  let lastSend = 0;
-  useFrame(({ clock }) => {
-    if (clock.elapsedTime - lastSend > 0.1 && ref.current && room) {
-      const pos = ref.current.getWorldPosition(new THREE.Vector3());
-      const rot = ref.current.getWorldQuaternion(new THREE.Quaternion());
-      room.send({ type: 'broadcast', event: 'move', payload: { username, position: [pos.x, pos.y, pos.z], rotation:[rot.x, rot.y, rot.z, rot.w] } });
-      lastSend = clock.elapsedTime;
-    }
-  });
-  return <group ref={ref} />;
-}
-
-function OtherPlayer({ position, rotation, username }: any) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame(() => {
-    if (ref.current) {
-      ref.current.position.lerp(new THREE.Vector3(...position), 0.1);
-      ref.current.quaternion.slerp(new THREE.Quaternion(...rotation), 0.1);
-    }
-  });
   return (
-    <group ref={ref}>
-      <mesh position={[0, 1, 0]}><capsuleGeometry args={[0.5, 1, 4]} /><meshStandardMaterial color="#3b82f6" /></mesh>
-      <Text position={[0, 2.8, 0]} fontSize={0.6} outlineWidth={0.05} outlineColor="black">{username}</Text>
-    </group>
-  );
-}
-
-function DevBuilding({ dev, position }: { dev: any, position:[number, number, number] }) {
-  const height = Math.max(5, (dev.contributions || 10) / 100);
-  const width = Math.max(4, Math.min(25, (dev.repos || 5) / 2));
-  return (
-    <RigidBody type="fixed" position={position} onClick={() => window.open(`https://github.com/${dev.username}`, "_blank")}>
-      <mesh position={[0, height / 2, 0]}>
+    <RigidBody type="fixed" position={position} colliders="cuboid" onClick={() => window.open(`https://github.com/${dev.username}`, "_blank")}>
+      <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[width, height, width]} />
-        <meshStandardMaterial color={`hsl(${(dev.username.length * 25) % 360}, 70%, 20%)`} emissive={`hsl(${(dev.username.length * 25) % 360}, 70%, 40%)`} emissiveIntensity={0.5} />
+        <meshStandardMaterial 
+            color={`hsl(${(dev.username.length * 40) % 360}, 60%, 15%)`} 
+            emissive={`hsl(${(dev.username.length * 40) % 360}, 60%, 40%)`}
+            emissiveIntensity={isTopDev ? 2 : 0.4}
+        />
       </mesh>
-      {dev.avatar_url && <Image url={dev.avatar_url} transparent scale={[width * 0.8, width * 0.8, 1]} position={[0, height/2, width/2 + 0.1]} />}
-      <Text position={[0, height + 2, 0]} fontSize={2} outlineWidth={0.08} outlineColor="#000000">{dev.username}</Text>
+      {dev.avatar_url && (
+        <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
+            <Image url={dev.avatar_url} scale={[width * 0.7, width * 0.7]} position={[0, height / 2, width / 2 + 0.1]} />
+        </Float>
+      )}
+      <Text position={[0, height + 1.5, 0]} fontSize={1.2} color="white" font="/fonts/Inter-Bold.ttf">
+        {dev.username.toUpperCase()}
+      </Text>
     </RigidBody>
   );
 }
 
 function City() {
-  const { data: devs } = useSWR('/api/city');
+  const { data: devs } = useSWR('/api/city', fetcher);
   if (!devs || !Array.isArray(devs)) return null;
   return (
     <group>
-      {devs.map((dev: any, i: number) => {
-        const cols = Math.max(2, Math.ceil(Math.sqrt(devs.length)));
-        const spacing = 40;
-        const x = (i % cols) * spacing - (cols * spacing) / 2;
-        const z = Math.floor(i / cols) * spacing - (cols * spacing) / 2;
-        return <DevBuilding key={dev.username || i} dev={dev} position={[x, 0, z]} />;
+      {devs.map((dev, i) => {
+        const spacing = 45;
+        const x = (i % 10) * spacing - 225;
+        const z = Math.floor(i / 10) * spacing - 225;
+        return <DevBuilding key={dev.username} dev={dev} position={[x, 0, z]} />;
       })}
     </group>
   );
 }
 
 export default function WorldClient({ username }: { username: string }) {
-  const { data: devs, error, isLoading } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
-  const [isTouch, setIsTouch] = useState(false);
+  const { data: devs, isLoading } = useSWR('/api/city', fetcher);
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
+  const [isTouch, setIsTouch] = useState(false);
   const room = useRef<any>(null);
 
   useEffect(() => {
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    try {
-      room.current = supabase.channel('git-world-live', { config: { broadcast: { self: false } } });
-      room.current.on('broadcast', { event: 'move' }, ({ payload }: { payload: any }) => {
-        setPlayers(prev => ({ ...prev, [payload.username]: payload }));
-      }).subscribe();
-    } catch (e) { console.warn("Multiplayer disabled/error:", e); }
-    return () => { room.current?.unsubscribe(); };
-  },[]);
+    room.current = supabase.channel('presence').on('broadcast', { event: 'move' }, ({ payload }: any) => {
+      setPlayers(prev => ({ ...prev, [payload.username]: payload }));
+    }).subscribe();
+  }, []);
 
-  if (isLoading) return <FullScreenLoader />;
-  if (error) return <div className="fixed inset-0 bg-red-950 text-white flex items-center justify-center font-mono">Error: Could not load city data.</div>;
+  if (isLoading) return <div className="fixed inset-0 bg-black flex items-center justify-center text-white font-mono uppercase tracking-[0.2em] animate-pulse">Initializing Git World...</div>;
 
   return (
-    <div className="w-screen h-screen bg-black fixed inset-0">
-      <div className="fixed top-4 left-4 z-50 text-white font-mono bg-zinc-900/80 p-4 rounded-xl backdrop-blur-md border border-white/10 shadow-2xl w-auto max-w-xs">
-        <h1 className="text-xl font-bold text-green-400 border-b border-green-400/20 pb-2">Git World</h1>
-        <div className="mt-2 text-sm text-zinc-300"><Chat username={username} />
-        Connected as: <span className="text-white font-bold">{username}</span></div>
-        <div className="text-sm text-purple-300">Online Players: {Object.keys(players).length + 1}</div>
-        <div className="mt-3 pt-3 border-t border-zinc-700">
-            <button 
-                onClick={() => setFlyMode(!flyMode)}
-                className={`flex items-center justify-center gap-2 w-full text-sm py-2 rounded-lg transition-colors ${flyMode ? 'bg-blue-500 hover:bg-blue-600' : 'bg-zinc-700 hover:bg-zinc-600'}`}
-            >
-                <Rocket size={16} /> Fly Mode: {flyMode ? 'ON' : 'OFF'}
-            </button>
-        </div>
-      </div>
+    <EcctrlProvider>
+      <div className="w-screen h-screen bg-black overflow-hidden fixed inset-0">
+        <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
+        <Chat username={username} />
+        
+        {isTouch && <div className="fixed bottom-10 left-10 z-[200] opacity-60"><EcctrlJoystick /></div>}
 
-      {isTouch && <EcctrlJoystick />}
-      
-      <Canvas shadows camera={{ fov: 60 }}>
-        <Suspense fallback={null}>
-          <Sky sunPosition={[100, 20, 100]} />
-          <Environment preset="city" />
-          <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-          <fog attach="fog" args={['#17171c', 0, 200]} />
-          <ambientLight intensity={0.3} />
-          <directionalLight position={[20, 30, 10]} intensity={1.5} castShadow shadow-mapSize={2048} />
-          <Physics debug={false}>
-            <Ecctrl animated jumpVel={flyMode ? 0 : 6} maxVelLimit={flyMode ? 15 : 8} gravityScale={flyMode ? 0 : 1} camCollision={!flyMode} autoBalance={!flyMode}>
-              <PlayerTracker username={username} room={room.current} />
-              <mesh position={[0, 1, 0]}>
-                <capsuleGeometry args={[0.5, 1, 4]} />
-                <meshStandardMaterial color="#f472b6" emissive="#f472b6" emissiveIntensity={0.5} />
+        <Canvas shadows camera={{ fov: 50, position: [0, 20, 50] }}>
+          <fog attach="fog" args={['#09090b', 30, 250]} />
+          <Sky sunPosition={[100, 10, 100]} turbidity={0.1} rayleigh={0.5} />
+          <Stars radius={150} depth={50} count={7000} factor={4} saturation={0} />
+          <Environment preset="night" />
+          <ambientLight intensity={0.2} />
+          <directionalLight position={[50, 50, 50]} intensity={1} castShadow shadow-mapSize={1024} />
+
+          <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
+            <Ecctrl animated jumpVel={flyMode ? 0 : 8} maxVelLimit={flyMode ? 20 : 10} camInitDis={-10}>
+              <mesh position={[0, 1, 0]} castShadow>
+                <capsuleGeometry args={[0.4, 0.8, 4]} />
+                <meshStandardMaterial color="#4ade80" emissive="#4ade80" emissiveIntensity={0.5} />
               </mesh>
             </Ecctrl>
+            
             <City />
-            {Object.values(players).map((p: any) => p.username !== username && <OtherPlayer key={p.username} {...p} /> )}
+            
             <RigidBody type="fixed">
-              <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[1000, 1000]} /><meshStandardMaterial color="#111827" /></mesh>
-              <Grid infiniteGrid fadeDistance={200} sectionColor="#4ade80" cellColor="#059669" position={[0, 0.01, 0]} />
+              <Grid infiniteGrid fadeDistance={300} sectionColor="#1e293b" cellColor="#0f172a" />
+              <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+                <planeGeometry args={[2000, 2000]} />
+                <meshStandardMaterial color="#09090b" />
+              </mesh>
             </RigidBody>
           </Physics>
-        </Suspense>
-      </Canvas>
-    </div>
+        </Canvas>
+      </div>
+    </EcctrlProvider>
   );
 }
