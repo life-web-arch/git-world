@@ -24,26 +24,6 @@ This project turns GitHub profiles into a navigable 3D world where every develop
 - **Authentication:** NextAuth.js
 - **Styling:** Tailwind CSS
 
-## ⚙️ Getting Started
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/git-world.git
-    cd git-world
-    ```
-
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-
-3.  **Set up environment variables:**
-    -   Create a `.env.local` file by copying `.env.example` (you can create this file).
-    -   Add your keys from GitHub (OAuth App, Personal Access Token) and Supabase.
-
-4.  **Run the development server:**
-    ```bash
-    npm run dev
-    ```
 
 Open [https://git-world-sigma.vercel.app](https://git-world-sigma.vercel.app) with your browser to see the result.
