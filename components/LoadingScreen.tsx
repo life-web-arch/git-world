@@ -18,9 +18,9 @@ export default function LoadingScreen({ progress }: { progress: number }) {
         </div>
         
         <div style={{ marginTop: '30px', fontSize: '9px', color: '#444', textAlign: 'left', lineHeight: '1.6' }}>
-          <div>> FETCHING_CITY_DATA... {progress > 0 ? 'DONE' : 'WAIT'}</div>
-          <div>> ALLOCATING_GPU_BUFFERS... {progress > 30 ? 'DONE' : '...'}</div>
-          <div>> SYNCHRONIZING_PLAYERS... {progress > 80 ? 'DONE' : '...'}</div>
+          <div>{">"} FETCHING_CITY_DATA... {progress > 0 ? 'DONE' : 'WAIT'}</div>
+          <div>{">"} ALLOCATING_GPU_BUFFERS... {progress > 30 ? 'DONE' : '...'}</div>
+          <div>{">"} SYNCHRONIZING_PLAYERS... {progress > 80 ? 'DONE' : '...'}</div>
         </div>
       </div>
     </div>
