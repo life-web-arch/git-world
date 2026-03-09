@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Sky, Stars, useProgress, Environment } from "@react-three/drei";
+import { Sky, Stars, useProgress } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
@@ -40,16 +40,34 @@ export default function WorldClient({ username }: { username: string }) {
   const isDataReady = mounted && devs;
 
   return (
-    <div style={{ width: '100vw', height: '100vh', backgroundColor: '#050818', position: 'fixed', inset: 0, overflow: 'hidden' }}>
-
+    <div style={{
+      width: '100vw', height: '100vh', backgroundColor: '#050818',
+      position: 'fixed', inset: 0, overflow: 'hidden'
+    }}>
       {!isDataReady && <LoadingScreen progress={progress || 10} />}
 
       {isDataReady && (
         <>
-          <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
+          <HUD
+            username={username}
+            playersCount={Object.keys(players).length + 1}
+            flyMode={flyMode}
+            setFlyMode={setFlyMode}
+          />
           <Chat username={username} />
+
+          {/* Joystick scaled way down, tucked bottom-left */}
           {isTouch && (
-            <div style={{ position: 'fixed', bottom: '40px', left: '40px', zIndex: 100, transform: 'scale(1.2)' }}>
+            <div style={{
+              position: 'fixed',
+              bottom: '10px',
+              left: '10px',
+              zIndex: 40,
+              transform: 'scale(0.55)',
+              transformOrigin: 'bottom left',
+              opacity: 0.75,
+              pointerEvents: 'auto',
+            }}>
               <EcctrlJoystick />
             </div>
           )}
@@ -57,14 +75,13 @@ export default function WorldClient({ username }: { username: string }) {
           <ErrorBoundary>
             <Canvas
               shadows
-              camera={{ fov: 60, position: [0, 8, 20], near: 0.1, far: 1000 }}
+              camera={{ fov: 60, position: [0, 12, 160], near: 0.1, far: 1000 }}
               style={{ display: 'block', width: '100vw', height: '100vh' }}
             >
               <color attach="background" args={['#050818']} />
-              <fog attach="fog" args={['#050818', 80, 400]} />
+              <fog attach="fog" args={['#050818', 120, 500]} />
 
               <Suspense fallback={null}>
-                {/* Night sky with faint stars */}
                 <Sky
                   distance={450000}
                   sunPosition={[0, -0.1, -1]}
@@ -77,45 +94,48 @@ export default function WorldClient({ username }: { username: string }) {
                 />
                 <Stars radius={200} depth={60} count={3000} factor={5} saturation={0.3} fade speed={0.3} />
 
-                {/* Rich lighting setup */}
-                <ambientLight intensity={0.3} color="#1a2040" />
-                {/* Moon-like directional */}
+                <ambientLight intensity={0.4} color="#1a2040" />
                 <directionalLight
                   position={[-50, 80, -30]}
-                  intensity={0.8}
+                  intensity={1.0}
                   color="#b0c4ff"
                   castShadow
-                  shadow-mapSize={[2048, 2048]}
+                  shadow-mapSize={[1024, 1024]}
                   shadow-camera-far={500}
                   shadow-camera-left={-200}
                   shadow-camera-right={200}
                   shadow-camera-top={200}
                   shadow-camera-bottom={-200}
                 />
-                {/* Warm city glow from below */}
                 <pointLight position={[0, 2, 0]} intensity={30} color="#ff6030" distance={80} />
-                {/* Cool accent fill */}
                 <pointLight position={[100, 30, 100]} intensity={200} color="#4060ff" distance={300} />
                 <pointLight position={[-100, 30, -100]} intensity={200} color="#00ffaa" distance={300} />
 
                 <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-                  {/* Player — SMALL capsule, correct scale */}
                   <Ecctrl
-                    animated
+                    animated={false}
                     jumpVel={flyMode ? 0 : 8}
                     maxVelLimit={flyMode ? 20 : 10}
-                    camInitDis={-6}
-                    camMinDis={-2}
-                    camMaxDis={-12}
+                    // Camera sits 10 units behind, 4 units up — never clips into character
+                    camInitDis={-10}
+                    camMinDis={-4}
+                    camMaxDis={-18}
+                    camInitDir={{ x: -0.2, y: 0 }}
+                    // Spawn away from buildings
+                    position={[0, 5, 150]}
                   >
-                    <mesh castShadow>
+                    {/* Invisible collision body — no visible mesh on camera */}
+                    <mesh visible={false}>
                       <capsuleGeometry args={[0.3, 0.7, 8, 16]} />
+                      <meshStandardMaterial />
+                    </mesh>
+                    {/* Small visible indicator that stays below camera line */}
+                    <mesh position={[0, -0.5, 0]} castShadow>
+                      <cylinderGeometry args={[0.15, 0.25, 0.1, 8]} />
                       <meshStandardMaterial
                         color="#22c55e"
                         emissive="#22c55e"
-                        emissiveIntensity={2}
-                        roughness={0.2}
-                        metalness={0.8}
+                        emissiveIntensity={3}
                       />
                     </mesh>
                   </Ecctrl>
@@ -128,23 +148,13 @@ export default function WorldClient({ username }: { username: string }) {
                     />
                   ))}
 
-                  {/* Ground — dark reflective surface with grid lines feel */}
+                  {/* Ground */}
                   <RigidBody type="fixed">
                     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.05, 0]}>
-                      <planeGeometry args={[2000, 2000, 80, 80]} />
-                      <meshStandardMaterial
-                        color="#080c18"
-                        roughness={0.8}
-                        metalness={0.2}
-                      />
+                      <planeGeometry args={[2000, 2000]} />
+                      <meshStandardMaterial color="#080c18" roughness={0.9} metalness={0.1} />
                     </mesh>
                   </RigidBody>
-
-                  {/* Grid lines on ground for cyberpunk feel */}
-                  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                    <planeGeometry args={[2000, 2000]} />
-                    <meshBasicMaterial color="#0a1628" wireframe={false} transparent opacity={0.6} />
-                  </mesh>
                 </Physics>
               </Suspense>
             </Canvas>
