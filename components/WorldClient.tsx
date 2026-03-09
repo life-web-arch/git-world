@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Sky, Stars, useProgress, Grid, Cloud, Float } from "@react-three/drei";
+import { Sky, Stars, useProgress, Grid, Cloud } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
@@ -16,7 +16,6 @@ import { useFrame } from "@react-three/fiber";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-// ── Moon ─────────────────────────────────────────────────────────────────────
 function Moon() {
   return (
     <group position={[-120, 90, -300]}>
@@ -29,19 +28,19 @@ function Moon() {
   );
 }
 
-// ── Tree ─────────────────────────────────────────────────────────────────────
 function Tree({ position }: { position: [number, number, number] }) {
-  const trunkH = 2.5 + Math.random() * 1.5;
-  const canopyR = 2 + Math.random() * 1.5;
-  const green = `hsl(${120 + Math.random() * 30}, 60%, ${18 + Math.random() * 12}%)`;
+  const seed = position[0] * 13.7 + position[2] * 7.3;
+  const trunkH = 2.5 + (Math.abs(Math.sin(seed)) * 1.5);
+  const canopyR = 2 + (Math.abs(Math.cos(seed)) * 1.5);
+  const hue = 120 + (Math.abs(Math.sin(seed * 2)) * 30);
+  const light = 18 + (Math.abs(Math.cos(seed * 3)) * 12);
+  const green = `hsl(${hue}, 60%, ${light}%)`;
   return (
     <group position={position}>
-      {/* trunk */}
       <mesh position={[0, trunkH / 2, 0]} castShadow>
         <cylinderGeometry args={[0.25, 0.35, trunkH, 6]} />
         <meshStandardMaterial color="#3d2010" roughness={1} />
       </mesh>
-      {/* canopy layers */}
       <mesh position={[0, trunkH + canopyR * 0.5, 0]} castShadow>
         <coneGeometry args={[canopyR, canopyR * 1.4, 7]} />
         <meshStandardMaterial color={green} roughness={0.9} />
@@ -58,31 +57,37 @@ function Tree({ position }: { position: [number, number, number] }) {
   );
 }
 
-// ── Water ─────────────────────────────────────────────────────────────────────
-function WaterBody({ position, rx, rz }: { position: [number,number,number], rx: number, rz: number }) {
+// Water: use circleGeometry + non-uniform scale on the group
+function WaterBody({ position, sx, sz }: { position: [number,number,number], sx: number, sz: number }) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame((s) => {
     if (ref.current) {
-      (ref.current.material as THREE.MeshStandardMaterial).roughness =
-        0.05 + Math.sin(s.clock.elapsedTime * 0.4) * 0.03;
+      (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity =
+        0.3 + Math.sin(s.clock.elapsedTime * 0.5) * 0.15;
     }
   });
   return (
-    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={position} receiveShadow>
-      <ellipseGeometry args={[rx, rz, 48]} />
-      <meshStandardMaterial
-        color="#0a2a4a"
-        emissive="#0a3060"
-        emissiveIntensity={0.4}
-        roughness={0.05}
-        metalness={0.9}
-        transparent opacity={0.92}
-      />
-    </mesh>
+    <group position={position} scale={[sx, 1, sz]}>
+      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} receiveShadow>
+        <circleGeometry args={[1, 48]} />
+        <meshStandardMaterial
+          color="#061828"
+          emissive="#0a3060"
+          emissiveIntensity={0.3}
+          roughness={0.05}
+          metalness={0.95}
+          transparent opacity={0.9}
+        />
+      </mesh>
+      {/* Shoreline ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <ringGeometry args={[0.92, 1.08, 48]} />
+        <meshBasicMaterial color="#1a6080" transparent opacity={0.5} />
+      </mesh>
+    </group>
   );
 }
 
-// ── Grass patch ───────────────────────────────────────────────────────────────
 function GrassPatch({ position, r }: { position: [number,number,number], r: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={position} receiveShadow>
@@ -92,35 +97,40 @@ function GrassPatch({ position, r }: { position: [number,number,number], r: numb
   );
 }
 
-// ── Firefly ───────────────────────────────────────────────────────────────────
 function Fireflies() {
-  const count = 30;
-  const positions = useRef(
-    Array.from({ length: count }, () => [
-      (Math.random() - 0.5) * 300,
-      1 + Math.random() * 8,
-      (Math.random() - 0.5) * 300,
-    ])
+  const count = 25;
+  const data = useRef(
+    Array.from({ length: count }, (_, i) => ({
+      pos: new THREE.Vector3(
+        (((i * 137.5) % 300) - 150),
+        1 + ((i * 73) % 8),
+        (((i * 89.3) % 300) - 150)
+      ),
+      phase: i * 0.8,
+    }))
   );
   const refs = useRef<(THREE.Mesh | null)[]>([]);
+
   useFrame((s) => {
     const t = s.clock.elapsedTime;
     refs.current.forEach((m, i) => {
       if (!m) return;
-      const pulse = Math.sin(t * 2 + i * 1.3) * 0.5 + 0.5;
-      (m.material as THREE.MeshBasicMaterial).opacity = pulse * 0.9;
-      m.position.y = positions.current[i][1] + Math.sin(t * 0.5 + i) * 0.8;
+      const d = data.current[i];
+      const pulse = Math.sin(t * 2 + d.phase) * 0.5 + 0.5;
+      (m.material as THREE.MeshBasicMaterial).opacity = pulse * 0.85;
+      m.position.y = d.pos.y + Math.sin(t * 0.5 + d.phase) * 0.9;
     });
   });
+
   return (
     <>
-      {positions.current.map((p, i) => (
+      {data.current.map((d, i) => (
         <mesh
           key={i}
           ref={el => { refs.current[i] = el; }}
-          position={p as [number,number,number]}
+          position={d.pos}
         >
-          <sphereGeometry args={[0.08, 4, 4]} />
+          <sphereGeometry args={[0.07, 4, 4]} />
           <meshBasicMaterial color="#aaff44" transparent opacity={0.7} />
         </mesh>
       ))}
@@ -128,22 +138,26 @@ function Fireflies() {
   );
 }
 
-// ── Scene content (inside Canvas) ─────────────────────────────────────────────
-function WorldScene({ devs, flyMode, username }: any) {
-  // Deterministic tree ring around city
-  const treePositions: [number, number, number][] = [];
+// Deterministic tree positions — no Math.random() at render time
+function buildTreePositions(): [number, number, number][] {
+  const positions: [number, number, number][] = [];
+  // Outer ring
   for (let i = 0; i < 80; i++) {
     const angle = (i / 80) * Math.PI * 2;
-    const r = 220 + (i % 3) * 30 + Math.random() * 20;
-    treePositions.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
+    const r = 220 + (i % 3) * 30 + (i * 7.3) % 20;
+    positions.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
   }
-  // Scattered inner trees
+  // Scattered inner — deterministic via LCG
   for (let i = 0; i < 40; i++) {
-    const x = (Math.random() - 0.5) * 340;
-    const z = (Math.random() - 0.5) * 340;
-    if (Math.sqrt(x*x + z*z) > 80) treePositions.push([x, 0, z]);
+    const x = (((i * 137.508) % 340) - 170);
+    const z = (((i * 89.31) % 340) - 170);
+    if (Math.sqrt(x * x + z * z) > 80) positions.push([x, 0, z]);
   }
+  return positions;
+}
+const TREE_POSITIONS = buildTreePositions();
 
+function WorldScene({ devs, flyMode }: any) {
   return (
     <>
       <Sky
@@ -157,14 +171,13 @@ function WorldScene({ devs, flyMode, username }: any) {
       />
       <Stars radius={350} depth={100} count={6000} factor={7} saturation={0.6} fade speed={0.15} />
 
-      {/* Volumetric clouds */}
-      <Cloud position={[-80, 55, -180]} speed={0.1} opacity={0.25} color="#aabbff" scale={3} />
-      <Cloud position={[120, 70, -250]} speed={0.08} opacity={0.2} color="#8899ee" scale={2.5} />
-      <Cloud position={[0, 60, -300]} speed={0.12} opacity={0.15} color="#99aadd" scale={4} />
+      <Cloud position={[-80, 55, -180]} speed={0.1} opacity={0.22} color="#aabbff" scale={3} />
+      <Cloud position={[120, 70, -250]} speed={0.08} opacity={0.18} color="#8899ee" scale={2.5} />
+      <Cloud position={[0, 65, -300]} speed={0.12} opacity={0.15} color="#99aadd" scale={4} />
 
       <Moon />
+      <Fireflies />
 
-      {/* Lighting */}
       <ambientLight intensity={0.35} color="#101828" />
       <directionalLight
         position={[-120, 90, -300]}
@@ -182,10 +195,7 @@ function WorldScene({ devs, flyMode, username }: any) {
       <pointLight position={[120, 30, -180]} intensity={300} color="#3355ff" distance={400} decay={2} />
       <pointLight position={[-120, 30, -180]} intensity={300} color="#00ffcc" distance={400} decay={2} />
 
-      <Fireflies />
-
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-        {/* Player */}
         <Ecctrl
           animated={false}
           jumpVel={flyMode ? 0 : 8}
@@ -198,13 +208,7 @@ function WorldScene({ devs, flyMode, username }: any) {
         >
           <mesh castShadow>
             <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
-            <meshStandardMaterial
-              color="#22c55e"
-              emissive="#22c55e"
-              emissiveIntensity={1.5}
-              roughness={0.3}
-              metalness={0.6}
-            />
+            <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.5} roughness={0.3} metalness={0.6} />
           </mesh>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
             <ringGeometry args={[0.28, 0.55, 16]} />
@@ -212,29 +216,22 @@ function WorldScene({ devs, flyMode, username }: any) {
           </mesh>
         </Ecctrl>
 
-        {/* Buildings */}
         {devs?.map((dev: any, i: number) => (
           <DevBuilding
             key={dev.username || i}
             dev={dev}
-            position={[
-              (i % 8) * 45 - 160,
-              0,
-              Math.floor(i / 8) * 45 - 200,
-            ]}
+            position={[(i % 8) * 45 - 160, 0, Math.floor(i / 8) * 45 - 200]}
           />
         ))}
 
-        {/* Ground — large dark plane */}
         <RigidBody type="fixed">
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
             <planeGeometry args={[3000, 3000]} />
             <meshStandardMaterial color="#060a14" roughness={0.98} />
           </mesh>
         </RigidBody>
       </Physics>
 
-      {/* Cyberpunk grid */}
       <Grid
         position={[0, 0.02, 0]}
         args={[3000, 3000]}
@@ -249,7 +246,7 @@ function WorldScene({ devs, flyMode, username }: any) {
         infiniteGrid
       />
 
-      {/* Grass patches */}
+      {/* Grass */}
       <GrassPatch position={[80, 0.03, 60]} r={35} />
       <GrassPatch position={[-90, 0.03, 90]} r={28} />
       <GrassPatch position={[150, 0.03, -80]} r={40} />
@@ -257,21 +254,20 @@ function WorldScene({ devs, flyMode, username }: any) {
       <GrassPatch position={[20, 0.03, 160]} r={50} />
       <GrassPatch position={[-30, 0.03, -180]} r={45} />
 
-      {/* Water bodies */}
-      <WaterBody position={[110, 0.04, 110]} rx={28} rz={18} />
-      <WaterBody position={[-130, 0.04, 130]} rx={22} rz={15} />
-      <WaterBody position={[0, 0.04, 200]} rx={40} rz={25} />
-      <WaterBody position={[-160, 0.04, -140]} rx={20} rz={14} />
+      {/* Water — circleGeometry scaled via group.scale */}
+      <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
+      <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
+      <WaterBody position={[0, 0, 200]} sx={40} sz={25} />
+      <WaterBody position={[-160, 0, -140]} sx={20} sz={14} />
 
       {/* Trees */}
-      {treePositions.map((pos, i) => (
+      {TREE_POSITIONS.map((pos, i) => (
         <Tree key={i} position={pos} />
       ))}
     </>
   );
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
 export default function WorldClient({ username }: { username: string }) {
   const [mounted, setMounted] = useState(false);
   const { data: devs } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
@@ -300,10 +296,8 @@ export default function WorldClient({ username }: { username: string }) {
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#050818', overflow: 'hidden' }}>
       {!isDataReady && <LoadingScreen progress={progress || 10} />}
-
       {isDataReady && (
         <>
-          {/* Canvas — truly fullscreen */}
           <ErrorBoundary>
             <Canvas
               shadows
@@ -317,13 +311,7 @@ export default function WorldClient({ username }: { username: string }) {
             </Canvas>
           </ErrorBoundary>
 
-          {/* UI overlays */}
-          <HUD
-            username={username}
-            playersCount={Object.keys(players).length + 1}
-            flyMode={flyMode}
-            setFlyMode={setFlyMode}
-          />
+          <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
           <Chat username={username} />
 
           {isTouch && (
