@@ -2,15 +2,16 @@
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Sky, Grid, Stars, useProgress } from "@react-three/drei";
-import Ecctrl, { EcctrlJoystick, EcctrlProvider } from "ecctrl";
-import { useEffect, useState, useRef, Suspense, lazy } from "react";
+import Ecctrl, { EcctrlJoystick } from "ecctrl";
+import EcctrlProvider from "ecctrl";
+import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
 import HUD from "./HUD";
 import Chat from "./Chat";
 import LoadingScreen from "./LoadingScreen";
+import DevBuilding from "./DevBuilding";
 
-const DevBuilding = lazy(() => import("./DevBuilding"));
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export default function WorldClient({ username }: { username: string }) {
@@ -25,12 +26,16 @@ export default function WorldClient({ username }: { username: string }) {
   useEffect(() => {
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    room.current = supabase.channel('presence').on('broadcast', { event: 'move' }, ({ payload }: any) => {
-      setPlayers(prev => ({ ...prev, [payload.username]: payload }));
-    }).subscribe();
+    try {
+      room.current = supabase.channel('presence').on('broadcast', { event: 'move' }, ({ payload }: any) => {
+        if (payload && payload.username) {
+          setPlayers(prev => ({ ...prev, [payload.username]: payload }));
+        }
+      }).subscribe();
+    } catch (e) { console.error("Supabase Error:", e); }
+    return () => { room.current?.unsubscribe(); };
   }, []);
 
-  // Show Loader immediately if not mounted, or if 3D assets are loading, or if API data is missing
   const showLoader = !mounted || active || !devs;
 
   return (
@@ -39,7 +44,7 @@ export default function WorldClient({ username }: { username: string }) {
         
         {showLoader && <LoadingScreen progress={progress} />}
         
-        {mounted && devs && (
+        {mounted && (
           <>
             <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
             <Chat username={username} />
@@ -63,10 +68,8 @@ export default function WorldClient({ username }: { username: string }) {
                     </mesh>
                   </Ecctrl>
                   
-                  {devs?.map((dev: any, i: number) => (
-                    <Suspense key={dev.username} fallback={null}>
-                      <DevBuilding dev={dev} position={[(i % 10) * 60 - 300, 0, Math.floor(i / 10) * 60 - 300]} />
-                    </Suspense>
+                  {devs && Array.isArray(devs) && devs.map((dev: any, i: number) => (
+                    <DevBuilding key={dev.username || i} dev={dev} position={[(i % 10) * 60 - 300, 0, Math.floor(i / 10) * 60 - 300]} />
                   ))}
 
                   <RigidBody type="fixed">
