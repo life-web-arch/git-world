@@ -2,8 +2,8 @@
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Sky, Stars, useProgress, Grid, Cloud } from "@react-three/drei";
-import Ecctrl from "ecctrl";
-import { useEffect, useState, useRef, Suspense, useMemo } from "react";
+import Ecctrl, { EcctrlJoystick } from "ecctrl";
+import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
 import HUD from "./HUD";
@@ -29,182 +29,183 @@ function Moon() {
 }
 
 function Tree({ position }: { position: [number, number, number] }) {
-  const seed = Math.abs(position[0] * 13.7 + position[2] * 7.3);
-  const trunkH = 2.5 + (seed % 1.5);
-  const canopyR = 2 + (seed % 1.5);
-  const light = 18 + (seed % 12);
-  const green = `hsl(125, 55%, ${light}%)`;
+  const seed = position[0] * 13.7 + position[2] * 7.3;
+  const trunkH = 2.5 + (Math.abs(Math.sin(seed)) * 1.5);
+  const canopyR = 2 + (Math.abs(Math.cos(seed)) * 1.5);
+  const hue = 120 + (Math.abs(Math.sin(seed * 2)) * 30);
+  const light = 18 + (Math.abs(Math.cos(seed * 3)) * 12);
+  const green = `hsl(${hue}, 60%, ${light}%)`;
   return (
     <group position={position}>
       <mesh position={[0, trunkH / 2, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.32, trunkH, 6]} />
+        <cylinderGeometry args={[0.25, 0.35, trunkH, 6]} />
         <meshStandardMaterial color="#3d2010" roughness={1} />
       </mesh>
       <mesh position={[0, trunkH + canopyR * 0.5, 0]} castShadow>
-        <coneGeometry args={[canopyR, canopyR * 1.5, 7]} />
+        <coneGeometry args={[canopyR, canopyR * 1.4, 7]} />
         <meshStandardMaterial color={green} roughness={0.9} />
       </mesh>
       <mesh position={[0, trunkH + canopyR * 1.1, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.65, canopyR * 1.1, 7]} />
+        <coneGeometry args={[canopyR * 0.7, canopyR * 1.1, 7]} />
         <meshStandardMaterial color={green} roughness={0.9} />
       </mesh>
       <mesh position={[0, trunkH + canopyR * 1.6, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.35, canopyR * 0.8, 7]} />
+        <coneGeometry args={[canopyR * 0.4, canopyR * 0.8, 7]} />
         <meshStandardMaterial color={green} roughness={0.9} />
       </mesh>
     </group>
   );
 }
 
+// Water: use circleGeometry + non-uniform scale on the group
 function WaterBody({ position, sx, sz }: { position: [number,number,number], sx: number, sz: number }) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame((s) => {
     if (ref.current) {
       (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity =
-        0.3 + Math.sin(s.clock.elapsedTime * 0.5) * 0.12;
+        0.3 + Math.sin(s.clock.elapsedTime * 0.5) * 0.15;
     }
   });
   return (
     <group position={position} scale={[sx, 1, sz]}>
-      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} receiveShadow>
         <circleGeometry args={[1, 48]} />
-        <meshStandardMaterial color="#061828" emissive="#0a3060" emissiveIntensity={0.3}
-          roughness={0.05} metalness={0.95} transparent opacity={0.9} />
+        <meshStandardMaterial
+          color="#061828"
+          emissive="#0a3060"
+          emissiveIntensity={0.3}
+          roughness={0.05}
+          metalness={0.95}
+          transparent opacity={0.9}
+        />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[0.92, 1.06, 48]} />
-        <meshBasicMaterial color="#1a8090" transparent opacity={0.5} />
+      {/* Shoreline ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <ringGeometry args={[0.92, 1.08, 48]} />
+        <meshBasicMaterial color="#1a6080" transparent opacity={0.5} />
       </mesh>
     </group>
   );
 }
 
-function GrassTile({ position, w, d }: { position: [number,number,number], w: number, d: number }) {
+function GrassPatch({ position, r }: { position: [number,number,number], r: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={position} receiveShadow>
-      <planeGeometry args={[w, d]} />
-      <meshStandardMaterial color="#14421a" roughness={0.95} />
+      <circleGeometry args={[r, 32]} />
+      <meshStandardMaterial color="#0d2a10" roughness={0.95} />
     </mesh>
   );
 }
 
-function Road({ position, w, d, dir = 'z' }: { position:[number,number,number], w:number, d:number, dir?:string }) {
-  const len = dir === 'z' ? d : w;
-  return (
-    <group position={position}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]} receiveShadow>
-        <planeGeometry args={[w, d]} />
-        <meshStandardMaterial color="#111318" roughness={0.9} metalness={0.1} />
-      </mesh>
-      {Array.from({ length: Math.floor(len / 12) }).map((_, i) => {
-        const offset = i * 12 - len / 2 + 6;
-        return (
-          <mesh key={i} rotation={[-Math.PI / 2, 0, dir === 'x' ? Math.PI / 2 : 0]}
-            position={dir === 'z' ? [0, 0.07, offset] : [offset, 0.07, 0]}>
-            <planeGeometry args={[0.3, 5]} />
-            <meshBasicMaterial color="#ffcc00" transparent opacity={0.7} />
-          </mesh>
-        );
-      })}
-      {([-1, 1] as number[]).map(side => (
-        <mesh key={side} rotation={[-Math.PI / 2, 0, 0]}
-          position={dir === 'z' ? [side * (w/2 - 0.4), 0.07, 0] : [0, 0.07, side * (d/2 - 0.4)]}>
-          <planeGeometry args={dir === 'z' ? [0.25, d] : [w, 0.25]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.4} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function Streetlight({ position }: { position: [number,number,number] }) {
-  return (
-    <group position={position}>
-      <mesh position={[0, 3, 0]}>
-        <cylinderGeometry args={[0.07, 0.1, 6, 6]} />
-        <meshStandardMaterial color="#444" roughness={0.8} />
-      </mesh>
-      <mesh position={[0.5, 6.1, 0]}>
-        <sphereGeometry args={[0.25, 8, 8]} />
-        <meshStandardMaterial color="#fffacc" emissive="#fffacc" emissiveIntensity={4} />
-      </mesh>
-      <pointLight position={[0.5, 6, 0]} color="#fff5aa" intensity={25} distance={28} decay={2} />
-    </group>
-  );
-}
-
 function Fireflies() {
-  const data = useRef(Array.from({ length: 25 }, (_, i) => ({
-    pos: new THREE.Vector3(((i * 137.5) % 300) - 150, 1 + ((i * 73) % 8), ((i * 89.3) % 300) - 150),
-    phase: i * 0.8,
-  })));
+  const count = 25;
+  const data = useRef(
+    Array.from({ length: count }, (_, i) => ({
+      pos: new THREE.Vector3(
+        (((i * 137.5) % 300) - 150),
+        1 + ((i * 73) % 8),
+        (((i * 89.3) % 300) - 150)
+      ),
+      phase: i * 0.8,
+    }))
+  );
   const refs = useRef<(THREE.Mesh | null)[]>([]);
+
   useFrame((s) => {
     const t = s.clock.elapsedTime;
     refs.current.forEach((m, i) => {
       if (!m) return;
-      (m.material as THREE.MeshBasicMaterial).opacity = (Math.sin(t * 2 + data.current[i].phase) * 0.5 + 0.5) * 0.85;
-      m.position.y = data.current[i].pos.y + Math.sin(t * 0.5 + data.current[i].phase) * 0.9;
+      const d = data.current[i];
+      const pulse = Math.sin(t * 2 + d.phase) * 0.5 + 0.5;
+      (m.material as THREE.MeshBasicMaterial).opacity = pulse * 0.85;
+      m.position.y = d.pos.y + Math.sin(t * 0.5 + d.phase) * 0.9;
     });
   });
+
   return (
-    <>{data.current.map((d, i) => (
-      <mesh key={i} ref={el => { refs.current[i] = el; }} position={d.pos.clone()}>
-        <sphereGeometry args={[0.07, 4, 4]} />
-        <meshBasicMaterial color="#aaff44" transparent opacity={0.7} />
-      </mesh>
-    ))}</>
+    <>
+      {data.current.map((d, i) => (
+        <mesh
+          key={i}
+          ref={el => { refs.current[i] = el; }}
+          position={d.pos}
+        >
+          <sphereGeometry args={[0.07, 4, 4]} />
+          <meshBasicMaterial color="#aaff44" transparent opacity={0.7} />
+        </mesh>
+      ))}
+    </>
   );
 }
 
+// Deterministic tree positions — no Math.random() at render time
 function buildTreePositions(): [number, number, number][] {
-  const out: [number, number, number][] = [];
+  const positions: [number, number, number][] = [];
+  // Outer ring
   for (let i = 0; i < 80; i++) {
     const angle = (i / 80) * Math.PI * 2;
     const r = 220 + (i % 3) * 30 + (i * 7.3) % 20;
-    out.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
+    positions.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
   }
+  // Scattered inner — deterministic via LCG
   for (let i = 0; i < 40; i++) {
-    const x = ((i * 137.508) % 340) - 170;
-    const z = ((i * 89.31) % 340) - 170;
-    if (Math.sqrt(x * x + z * z) > 80) out.push([x, 0, z]);
+    const x = (((i * 137.508) % 340) - 170);
+    const z = (((i * 89.31) % 340) - 170);
+    if (Math.sqrt(x * x + z * z) > 80) positions.push([x, 0, z]);
   }
-  return out;
+  return positions;
 }
 const TREE_POSITIONS = buildTreePositions();
 
-const LIGHT_POSITIONS: [number,number,number][] = [];
-for (let i = -3; i <= 3; i++) {
-  LIGHT_POSITIONS.push([i * 45 - 22, 0, 35]);
-  LIGHT_POSITIONS.push([i * 45 - 22, 0, -215]);
-  LIGHT_POSITIONS.push([185, 0, i * 45 - 90]);
-  LIGHT_POSITIONS.push([-185, 0, i * 45 - 90]);
-}
-
-function WorldScene({ devs, flyMode, spawnPos }: any) {
+function WorldScene({ devs, flyMode }: any) {
   return (
     <>
-      <Sky distance={450000} sunPosition={[-0.5, -0.08, -1]}
-        inclination={0.48} azimuth={0.28} mieCoefficient={0.004} rayleigh={0.4} turbidity={9} />
+      <Sky
+        distance={450000}
+        sunPosition={[-0.5, -0.08, -1]}
+        inclination={0.48}
+        azimuth={0.28}
+        mieCoefficient={0.004}
+        rayleigh={0.4}
+        turbidity={9}
+      />
       <Stars radius={350} depth={100} count={6000} factor={7} saturation={0.6} fade speed={0.15} />
-      <Cloud position={[-80, 55, -180]} speed={0.1} opacity={0.2} color="#aabbff" scale={3} />
-      <Cloud position={[120, 70, -250]} speed={0.08} opacity={0.15} color="#8899ee" scale={2.5} />
+
+      <Cloud position={[-80, 55, -180]} speed={0.1} opacity={0.22} color="#aabbff" scale={3} />
+      <Cloud position={[120, 70, -250]} speed={0.08} opacity={0.18} color="#8899ee" scale={2.5} />
+      <Cloud position={[0, 65, -300]} speed={0.12} opacity={0.15} color="#99aadd" scale={4} />
+
       <Moon />
       <Fireflies />
 
-      <ambientLight intensity={0.4} color="#101828" />
-      <directionalLight position={[-120, 90, -300]} intensity={0.9} color="#d0e4ff" castShadow
-        shadow-mapSize={[1024, 1024]} shadow-camera-far={600}
-        shadow-camera-left={-200} shadow-camera-right={200}
-        shadow-camera-top={200} shadow-camera-bottom={-200} />
-      <pointLight position={[0, 5, -80]} intensity={600} color="#ff5500" distance={350} decay={2} />
+      <ambientLight intensity={0.35} color="#101828" />
+      <directionalLight
+        position={[-120, 90, -300]}
+        intensity={0.9}
+        color="#d0e4ff"
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-far={600}
+        shadow-camera-left={-200}
+        shadow-camera-right={200}
+        shadow-camera-top={200}
+        shadow-camera-bottom={-200}
+      />
+      <pointLight position={[0, 5, -50]} intensity={600} color="#ff5500" distance={350} decay={2} />
       <pointLight position={[120, 30, -180]} intensity={300} color="#3355ff" distance={400} decay={2} />
       <pointLight position={[-120, 30, -180]} intensity={300} color="#00ffcc" distance={400} decay={2} />
 
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-        <Ecctrl animated={false} jumpVel={flyMode ? 0 : 8} maxVelLimit={flyMode ? 20 : 10}
-          camInitDis={-8} camMinDis={-3} camMaxDis={-15}
-          camInitDir={{ x: -0.15, y: 0 }} position={spawnPos}>
+        <Ecctrl
+          animated={false}
+          jumpVel={flyMode ? 0 : 8}
+          maxVelLimit={flyMode ? 20 : 10}
+          camInitDis={-8}
+          camMinDis={-3}
+          camMaxDis={-15}
+          camInitDir={{ x: -0.15, y: 0 }}
+          position={[0, 4, 80]}
+        >
           <mesh castShadow>
             <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
             <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.5} roughness={0.3} metalness={0.6} />
@@ -216,8 +217,11 @@ function WorldScene({ devs, flyMode, spawnPos }: any) {
         </Ecctrl>
 
         {devs?.map((dev: any, i: number) => (
-          <DevBuilding key={dev.username || i} dev={dev}
-            position={[(i % 8) * 45 - 160, 0, Math.floor(i / 8) * 45 - 200]} />
+          <DevBuilding
+            key={dev.username || i}
+            dev={dev}
+            position={[(i % 8) * 45 - 160, 0, Math.floor(i / 8) * 45 - 200]}
+          />
         ))}
 
         <RigidBody type="fixed">
@@ -228,104 +232,39 @@ function WorldScene({ devs, flyMode, spawnPos }: any) {
         </RigidBody>
       </Physics>
 
-      <Grid position={[0, 0.02, 0]} args={[3000, 3000]}
-        cellSize={10} cellThickness={0.2} cellColor="#080f20"
-        sectionSize={50} sectionThickness={0.5} sectionColor="#0a1a3a"
-        fadeDistance={350} fadeStrength={1.5} infiniteGrid />
+      <Grid
+        position={[0, 0.02, 0]}
+        args={[3000, 3000]}
+        cellSize={10}
+        cellThickness={0.3}
+        cellColor="#091428"
+        sectionSize={50}
+        sectionThickness={0.8}
+        sectionColor="#0c2050"
+        fadeDistance={400}
+        fadeStrength={1.5}
+        infiniteGrid
+      />
 
-      <GrassTile position={[80, 0.03, 70]} w={70} d={60} />
-      <GrassTile position={[-95, 0.03, 95]} w={55} d={50} />
-      <GrassTile position={[155, 0.03, -70]} w={80} d={65} />
-      <GrassTile position={[-145, 0.03, -55]} w={65} d={55} />
-      <GrassTile position={[20, 0.03, 170]} w={100} d={80} />
-      <GrassTile position={[-25, 0.03, -190]} w={90} d={70} />
+      {/* Grass */}
+      <GrassPatch position={[80, 0.03, 60]} r={35} />
+      <GrassPatch position={[-90, 0.03, 90]} r={28} />
+      <GrassPatch position={[150, 0.03, -80]} r={40} />
+      <GrassPatch position={[-140, 0.03, -60]} r={32} />
+      <GrassPatch position={[20, 0.03, 160]} r={50} />
+      <GrassPatch position={[-30, 0.03, -180]} r={45} />
 
-      <Road position={[0, 0, -90]} w={12} d={400} dir="z" />
-      <Road position={[0, 0, -90]} w={400} d={12} dir="x" />
-      <Road position={[-90, 0, -90]} w={8} d={350} dir="z" />
-      <Road position={[90, 0, -90]} w={8} d={350} dir="z" />
-      <Road position={[0, 0, -180]} w={350} d={8} dir="x" />
-      <Road position={[0, 0, 30]} w={350} d={8} dir="x" />
-      <Road position={[0, 0, -200]} w={400} d={10} dir="x" />
-      <Road position={[0, 0, 60]} w={400} d={10} dir="x" />
-      <Road position={[-180, 0, -80]} w={10} d={320} dir="z" />
-      <Road position={[180, 0, -80]} w={10} d={320} dir="z" />
-
+      {/* Water — circleGeometry scaled via group.scale */}
       <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
       <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
       <WaterBody position={[0, 0, 200]} sx={40} sz={25} />
       <WaterBody position={[-160, 0, -140]} sx={20} sz={14} />
 
-      {LIGHT_POSITIONS.map((p, i) => <Streetlight key={i} position={p} />)}
-      {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
+      {/* Trees */}
+      {TREE_POSITIONS.map((pos, i) => (
+        <Tree key={i} position={pos} />
+      ))}
     </>
-  );
-}
-
-// ── Custom mobile joystick — pure HTML/CSS, no layout impact ──────────────────
-function MobileJoystick({ onMove }: { onMove: (x: number, y: number) => void }) {
-  const baseRef = useRef<HTMLDivElement>(null);
-  const knobRef = useRef<HTMLDivElement>(null);
-  const active = useRef(false);
-  const center = useRef({ x: 0, y: 0 });
-  const MAX = 40;
-
-  const getPos = (e: TouchEvent) => ({ x: e.touches[0].clientX, y: e.touches[0].clientY });
-
-  useEffect(() => {
-    const base = baseRef.current;
-    const knob = knobRef.current;
-    if (!base || !knob) return;
-
-    const onStart = (e: TouchEvent) => {
-      const r = base.getBoundingClientRect();
-      center.current = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      active.current = true;
-    };
-    const onMove = (e: TouchEvent) => {
-      if (!active.current) return;
-      const p = getPos(e);
-      let dx = p.x - center.current.x;
-      let dy = p.y - center.current.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > MAX) { dx = dx / dist * MAX; dy = dy / dist * MAX; }
-      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-      onMove(dx / MAX, dy / MAX);
-    };
-    const onEnd = () => {
-      active.current = false;
-      knob.style.transform = 'translate(-50%, -50%)';
-      onMove(0, 0);
-    };
-
-    base.addEventListener('touchstart', onStart, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
-    window.addEventListener('touchend', onEnd, { passive: true });
-    return () => {
-      base.removeEventListener('touchstart', onStart);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
-    };
-  }, []);
-
-  return (
-    <div ref={baseRef} style={{
-      width: '100px', height: '100px', borderRadius: '50%',
-      background: 'rgba(255,255,255,0.06)',
-      border: '2px solid rgba(255,255,255,0.15)',
-      position: 'relative', touchAction: 'none',
-      backdropFilter: 'blur(8px)',
-    }}>
-      <div ref={knobRef} style={{
-        width: '44px', height: '44px', borderRadius: '50%',
-        background: 'rgba(34,197,94,0.6)',
-        border: '2px solid rgba(34,197,94,0.9)',
-        boxShadow: '0 0 12px rgba(34,197,94,0.5)',
-        position: 'absolute', top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)',
-        pointerEvents: 'none',
-      }} />
-    </div>
   );
 }
 
@@ -337,13 +276,6 @@ export default function WorldClient({ username }: { username: string }) {
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const room = useRef<any>(null);
-
-  const spawnPos = useMemo((): [number, number, number] => {
-    if (!devs || !username) return [0, 4, 60];
-    const idx = devs.findIndex((d: any) => d.username?.toLowerCase() === username.toLowerCase());
-    if (idx === -1) return [0, 4, 60];
-    return [(idx % 8) * 45 - 148, 4, Math.floor(idx / 8) * 45 - 188];
-  }, [devs, username]);
 
   useEffect(() => {
     setMounted(true);
@@ -362,57 +294,35 @@ export default function WorldClient({ username }: { username: string }) {
   const isDataReady = mounted && devs;
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: '#050818', overflow: 'hidden',
-    }}>
+    <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#050818', overflow: 'hidden' }}>
       {!isDataReady && <LoadingScreen progress={progress || 10} />}
-
       {isDataReady && (
         <>
-          {/* Canvas — absolutely positioned, fills parent */}
           <ErrorBoundary>
             <Canvas
               shadows
-              gl={{ antialias: false, alpha: false, powerPreference: 'high-performance' }}
-              camera={{ fov: 65, position: [0, 8, 80], near: 0.1, far: 2000 }}
+              gl={{ antialias: false, alpha: false }}
+              camera={{ fov: 65, position: [0, 8, 120], near: 0.1, far: 2000 }}
               style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
             >
               <Suspense fallback={null}>
-                <WorldScene devs={devs} flyMode={flyMode} spawnPos={spawnPos} />
+                <WorldScene devs={devs} flyMode={flyMode} username={username} />
               </Suspense>
             </Canvas>
           </ErrorBoundary>
 
-          {/* All UI overlays — absolutely positioned, pointer-events only where needed */}
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-            <div style={{ pointerEvents: 'auto' }}>
-              <HUD username={username} playersCount={Object.keys(players).length + 1}
-                flyMode={flyMode} setFlyMode={setFlyMode} />
-              <Chat username={username} />
-            </div>
+          <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
+          <Chat username={username} />
 
-            {/* Custom joystick — bottom left, does NOT affect layout */}
-            {isTouch && (
-              <div style={{
-                position: 'absolute', bottom: '24px', left: '24px',
-                pointerEvents: 'auto', zIndex: 50,
-              }}>
-                <MobileJoystick onMove={(x, y) => {
-                  // Dispatch keyboard events that Ecctrl listens to
-                  const fwd = y < -0.3;
-                  const bwd = y > 0.3;
-                  const lft = x < -0.3;
-                  const rgt = x > 0.3;
-                  const keys = ['KeyW','KeyS','KeyA','KeyD'];
-                  const states = [fwd, bwd, lft, rgt];
-                  keys.forEach((k, i) => {
-                    window.dispatchEvent(new KeyboardEvent(states[i] ? 'keydown' : 'keyup', { code: k, bubbles: true }));
-                  });
-                }} />
-              </div>
-            )}
-          </div>
+          {isTouch && (
+            <div style={{
+              position: 'fixed', bottom: '16px', left: '8px', zIndex: 40,
+              transform: 'scale(0.58)', transformOrigin: 'bottom left',
+              opacity: 0.78, pointerEvents: 'auto',
+            }}>
+              <EcctrlJoystick />
+            </div>
+          )}
         </>
       )}
     </div>
