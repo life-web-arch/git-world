@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Sky, Grid, Stars, useProgress } from "@react-three/drei";
+import { Sky, Text, Image, Float, useProgress, Stars } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import EcctrlProvider from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
@@ -16,7 +16,7 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export default function WorldClient({ username }: { username: string }) {
   const [mounted, setMounted] = useState(false);
-  const { data: devs, error: apiError } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
+  const { data: devs } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
   const { progress, active } = useProgress();
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
@@ -27,7 +27,6 @@ export default function WorldClient({ username }: { username: string }) {
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
     
-    // Only connect to Supabase if we are in the browser
     if (typeof window !== 'undefined') {
       room.current = supabase.channel('presence').on('broadcast', { event: 'move' }, ({ payload }: any) => {
         if (payload?.username) setPlayers(prev => ({ ...prev, [payload.username]: payload }));
@@ -36,17 +35,14 @@ export default function WorldClient({ username }: { username: string }) {
     return () => { room.current?.unsubscribe(); };
   }, []);
 
-  // FORCE HTML UI ONLY until everything is ready
-  // This prevents the "Black Screen of Death"
-  const isReady = mounted && devs && !active;
+  // We only transition when API is done AND ThreeJS says assets are ready
+  const isReady = mounted && devs && !active && progress === 100;
 
   return (
     <div style={{ width: '100vw', height: '100vh', backgroundColor: '#050505', position: 'fixed', inset: 0, overflow: 'hidden' }}>
       
-      {/* 1. The Loader (Always on top if not ready) */}
-      {!isReady && <LoadingScreen progress={apiError ? 0 : progress} />}
+      {!isReady && <LoadingScreen progress={progress || 10} />}
 
-      {/* 2. The 3D Engine (Only starts when isReady is true) */}
       {isReady && (
         <EcctrlProvider>
           <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
@@ -59,15 +55,15 @@ export default function WorldClient({ username }: { username: string }) {
             
             <Suspense fallback={null}>
               <Sky distance={450000} sunPosition={[0, -1, 0]} inclination={0} azimuth={0.25} />
-              <Stars radius={100} depth={50} count={2000} factor={4} saturation={0} fade speed={0.5} />
-              <ambientLight intensity={0.5} />
-              <pointLight position={[0, 100, 0]} intensity={2} color="#4ade80" />
+              <Stars radius={100} depth={50} count={1000} factor={4} saturation={0} fade speed={0.5} />
+              <ambientLight intensity={1.5} />
+              <pointLight position={[0, 50, 0]} intensity={2000} color="#4ade80" />
               
               <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
                 <Ecctrl animated jumpVel={flyMode ? 0 : 8} maxVelLimit={flyMode ? 20 : 10}>
                   <mesh castShadow>
                      <capsuleGeometry args={[0.5, 1]} />
-                     <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2} />
+                     <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={5} />
                   </mesh>
                 </Ecctrl>
                 
@@ -76,10 +72,9 @@ export default function WorldClient({ username }: { username: string }) {
                 ))}
 
                 <RigidBody type="fixed">
-                  <Grid infiniteGrid fadeDistance={400} sectionColor="#111" cellColor="#222" sectionSize={10} />
                   <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-                    <planeGeometry args={[10000, 10000]} />
-                    <meshStandardMaterial color="#050505" />
+                    <planeGeometry args={[2000, 2000]} />
+                    <meshStandardMaterial color="#0a0a0a" />
                   </mesh>
                 </RigidBody>
               </Physics>
