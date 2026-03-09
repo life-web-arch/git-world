@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config, { dev, isServer }) => {
+  webpack: (config, { dev }) => {
     // Only apply Termux-specific hacks if we are in a dev environment
     if (dev && process.env.TERMUX_VERSION) {
       config.watchOptions = {
@@ -10,11 +10,6 @@ const nextConfig = {
       config.cache = false;
     }
     return config;
-  },
-  // Ensure we don't use turbopack on Vercel build
-  experimental: {
-    // This forces Vercel to use the Webpack builder
-    turbo: undefined 
   }
 };
 

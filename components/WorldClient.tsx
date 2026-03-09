@@ -126,7 +126,7 @@ export default function WorldClient({ username }: { username: string }) {
         </div>
       </div>
 
-      {isTouch && <EcctrlJoystick buttonNumber={0} />}
+      {isTouch && <EcctrlJoystick />}
       
       <Canvas shadows camera={{ fov: 60 }}>
         <Suspense fallback={null}>
