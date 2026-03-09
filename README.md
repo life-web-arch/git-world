@@ -46,4 +46,4 @@ This project turns GitHub profiles into a navigable 3D world where every develop
     npm run dev
     ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [https://git-world-sigma.vercel.app](https://git-world-sigma.vercel.app) with your browser to see the result.
