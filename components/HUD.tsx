@@ -1,81 +1,158 @@
 "use client";
 import { useState } from 'react';
-import { Settings, Users, Trophy, Zap, Map, X } from 'lucide-react';
+import { Settings, Users, Zap, X, GitCommit, GitBranch } from 'lucide-react';
 
 export default function HUD({ username, playersCount, flyMode, setFlyMode }: any) {
   const [menu, setMenu] = useState<string | null>(null);
 
+  const glassStyle: React.CSSProperties = {
+    background: 'rgba(5, 8, 24, 0.75)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '16px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+  };
+
   const Panel = ({ title, children }: any) => (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-white/10 w-80 p-6 rounded-2xl shadow-2xl relative">
-        <button onClick={() => setMenu(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
-        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          {title === 'Settings' && <Settings size={20} className="text-blue-400"/>}
-          {title === 'Players' && <Users size={20} className="text-green-400"/>}
-          {title === 'Stats' && <Trophy size={20} className="text-yellow-400"/>}
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+    }}>
+      <div style={{ ...glassStyle, width: '320px', padding: '24px', position: 'relative' }}>
+        <button
+          onClick={() => setMenu(null)}
+          style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '20px' }}
+        >
+          <X size={18} />
+        </button>
+        <h2 style={{ color: '#fff', fontFamily: 'monospace', fontWeight: 700, fontSize: '14px', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '20px', marginTop: 0 }}>
           {title}
         </h2>
-        <div className="space-y-4">{children}</div>
+        {children}
       </div>
     </div>
   );
 
+  const btnStyle = (hoverColor: string): React.CSSProperties => ({
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#888',
+    padding: '10px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'color 0.2s, background 0.2s',
+  });
+
   return (
     <>
-      {/* Top Bar Navigation */}
-      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-zinc-900/80 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl">
-        <button onClick={() => setMenu('Players')} className="p-3 hover:bg-white/5 rounded-xl transition-all text-zinc-400 hover:text-green-400">
-          <Users size={20} />
+      {/* Top center nav */}
+      <div style={{
+        ...glassStyle,
+        position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 50, display: 'flex', alignItems: 'center', gap: '4px', padding: '6px',
+      }}>
+        <button style={btnStyle('#22c55e')} onClick={() => setMenu('Players')}>
+          <Users size={18} color={menu === 'Players' ? '#22c55e' : '#666'} />
         </button>
-        <div className="w-[1px] h-6 bg-white/10 mx-1" />
-        <button onClick={() => setMenu('Stats')} className="p-3 hover:bg-white/5 rounded-xl transition-all text-zinc-400 hover:text-yellow-400">
-          <Trophy size={20} />
-        </button>
-        <div className="w-[1px] h-6 bg-white/10 mx-1" />
-        <button onClick={() => setMenu('Settings')} className="p-3 hover:bg-white/5 rounded-xl transition-all text-zinc-400 hover:text-blue-400">
-          <Settings size={20} />
+        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)' }} />
+        <button style={btnStyle('#3b82f6')} onClick={() => setMenu('Settings')}>
+          <Settings size={18} color={menu === 'Settings' ? '#3b82f6' : '#666'} />
         </button>
       </div>
 
-      {/* Profile Corner */}
-      <div className="fixed top-6 left-6 z-50 flex items-center gap-3 bg-zinc-900/50 backdrop-blur-md p-2 pr-4 rounded-full border border-white/5">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-green-400 to-blue-500 flex items-center justify-center font-bold text-black text-xs uppercase">
-          {username.slice(0,2)}
+      {/* Top-left profile chip */}
+      <div style={{
+        ...glassStyle,
+        position: 'fixed', top: '20px', left: '20px', zIndex: 50,
+        display: 'flex', alignItems: 'center', gap: '10px',
+        padding: '8px 16px 8px 8px',
+        borderRadius: '999px',
+      }}>
+        <div style={{
+          width: '36px', height: '36px', borderRadius: '50%',
+          background: 'linear-gradient(135deg, #22c55e, #3b82f6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 900, fontSize: '11px', color: '#000', fontFamily: 'monospace',
+          letterSpacing: '1px',
+        }}>
+          {username.slice(0, 2).toUpperCase()}
         </div>
         <div>
-          <p className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase leading-none">Developer</p>
-          <p className="text-sm text-white font-medium">{username}</p>
+          <div style={{ fontSize: '9px', color: '#444', fontFamily: 'monospace', letterSpacing: '2px', textTransform: 'uppercase', lineHeight: 1 }}>DEVELOPER</div>
+          <div style={{ fontSize: '13px', color: '#fff', fontFamily: 'monospace', fontWeight: 700, marginTop: '2px' }}>{username}</div>
         </div>
       </div>
 
-      {/* Fly Mode Toggle (Zap Icon) */}
-      <button 
+      {/* Fly mode toggle — bottom center */}
+      <button
         onClick={() => setFlyMode(!flyMode)}
-        className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 p-4 rounded-full transition-all shadow-xl flex items-center gap-2 font-bold text-xs ${flyMode ? 'bg-blue-500 text-white scale-110' : 'bg-zinc-800 text-zinc-400'}`}
+        style={{
+          ...glassStyle,
+          position: 'fixed', bottom: '28px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, border: flyMode ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+          background: flyMode ? 'rgba(59,130,246,0.2)' : 'rgba(5,8,24,0.75)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+          padding: '12px 24px', borderRadius: '999px',
+          color: flyMode ? '#3b82f6' : '#666',
+          fontFamily: 'monospace', fontWeight: 700, fontSize: '11px', letterSpacing: '2px',
+          transition: 'all 0.3s',
+          boxShadow: flyMode ? '0 0 20px rgba(59,130,246,0.4), 0 8px 32px rgba(0,0,0,0.6)' : '0 8px 32px rgba(0,0,0,0.6)',
+        }}
       >
-        <Zap size={18} fill={flyMode ? "currentColor" : "none"}/>
-        {flyMode ? 'FLYING' : 'WALKING'}
+        <Zap size={14} fill={flyMode ? 'currentColor' : 'none'} />
+        {flyMode ? 'FLY_MODE' : 'WALK_MODE'}
       </button>
 
-      {/* Panels Logic */}
-      {menu === 'Settings' && (
-        <Panel title="Settings">
-          <div className="flex items-center justify-between text-zinc-300 text-sm">
-            <span>High Quality Graphics</span>
-            <input type="checkbox" checked readOnly className="accent-green-500" />
+      {/* Players panel */}
+      {menu === 'Players' && (
+        <Panel title="Online Developers">
+          <div style={{ color: '#444', fontFamily: 'monospace', fontSize: '11px', marginBottom: '12px', letterSpacing: '1px' }}>
+            ACTIVE: <span style={{ color: '#22c55e' }}>{playersCount}</span>
           </div>
-          <button onClick={() => window.location.reload()} className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl text-zinc-300 text-xs transition-all">Reset Character</button>
-          <p className="text-[10px] text-zinc-500 mt-4">Vercel Build: Sigma-v2.0.1</p>
+          <div style={{
+            padding: '10px 14px', background: 'rgba(34,197,94,0.08)', borderRadius: '10px',
+            border: '1px solid rgba(34,197,94,0.2)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+          }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+            <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: '12px' }}>{username}</span>
+            <span style={{ color: '#444', fontFamily: 'monospace', fontSize: '10px', marginLeft: 'auto' }}>YOU</span>
+          </div>
         </Panel>
       )}
 
-      {menu === 'Players' && (
-        <Panel title="Online Now">
-          <div className="text-zinc-400 text-sm">Active Developers: <span className="text-white">{playersCount}</span></div>
-          <div className="max-h-40 overflow-y-auto space-y-2 mt-2">
-            <div className="p-2 bg-white/5 rounded-lg text-xs text-white flex items-center gap-2">
-               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> {username} (You)
-            </div>
+      {/* Settings panel */}
+      {menu === 'Settings' && (
+        <Panel title="System Config">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                padding: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '10px', color: '#aaa', fontFamily: 'monospace', fontSize: '11px',
+                letterSpacing: '2px', cursor: 'pointer', transition: 'background 0.2s',
+              }}
+            >
+              RESPAWN_CHARACTER
+            </button>
+            <button
+              onClick={() => window.location.href = '/api/auth/signout'}
+              style={{
+                padding: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                borderRadius: '10px', color: '#ef4444', fontFamily: 'monospace', fontSize: '11px',
+                letterSpacing: '2px', cursor: 'pointer',
+              }}
+            >
+              DISCONNECT_GITHUB
+            </button>
+            <p style={{ color: '#333', fontFamily: 'monospace', fontSize: '9px', letterSpacing: '1px', margin: 0 }}>
+              BUILD: SIGMA-v2.1.0 // GIT_WORLD
+            </p>
           </div>
         </Panel>
       )}
