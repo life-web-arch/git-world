@@ -1,178 +1,147 @@
 "use client";
 import { RigidBody } from "@react-three/rapier";
 import { Text, Html } from "@react-three/drei";
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
-// Deterministic color from username string
-function usernameToColor(username: string): string {
+function usernameToHue(username: string): number {
   let hash = 0;
   for (let i = 0; i < username.length; i++) {
     hash = username.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 90%, 55%)`;
+  return Math.abs(hash) % 360;
 }
 
-function usernameToHSL(username: string): [number, number, number] {
-  let hash = 0;
-  for (let i = 0; i < username.length; i++) {
-    hash = username.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return [hue / 360, 0.9, 0.55];
-}
-
-// Animated neon top beacon
-function Beacon({ height, color }: { height: number; color: string }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+function AnimatedBeacon({ height, color }: { height: number; color: THREE.Color }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   useFrame((state) => {
-    if (meshRef.current) {
-      const t = state.clock.elapsedTime;
-      (meshRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity =
-        1.5 + Math.sin(t * 2) * 1.0;
+    const t = state.clock.elapsedTime;
+    const pulse = 0.8 + Math.sin(t * 1.5 + height) * 0.5;
+    if (ref.current) {
+      (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse * 3;
+    }
+    if (lightRef.current) {
+      lightRef.current.intensity = pulse * 15;
     }
   });
+  const hex = `#${color.getHexString()}`;
   return (
-    <mesh ref={meshRef} position={[0, height + 1.5, 0]} castShadow>
-      <sphereGeometry args={[0.4, 8, 8]} />
-      <meshStandardMaterial
-        color={color}
-        emissive={color}
-        emissiveIntensity={2}
-        roughness={0}
-        metalness={1}
-      />
-    </mesh>
+    <group position={[0, height + 1.2, 0]}>
+      <mesh ref={ref}>
+        <sphereGeometry args={[0.35, 8, 8]} />
+        <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={2} roughness={0} metalness={1} />
+      </mesh>
+      <pointLight ref={lightRef} color={hex} intensity={10} distance={30} decay={2} />
+    </group>
   );
 }
 
 export default function DevBuilding({ dev, position }: any) {
   if (!dev) return null;
 
-  const height = Math.max(6, Math.min(80, (dev.contributions || 0) / 80));
-  const width = Math.max(5, Math.min(20, (dev.repos || 0) / 1.5));
-  const color = usernameToColor(dev.username || "dev");
-  const [h, s, l] = usernameToHSL(dev.username || "dev");
-  const threeColor = new THREE.Color().setHSL(h, s, l);
-  const colorStr = `#${threeColor.getHexString()}`;
+  const hue = usernameToHue(dev.username || "dev");
+  const color = useMemo(() => new THREE.Color().setHSL(hue / 360, 0.85, 0.55), [hue]);
+  const colorDark = useMemo(() => new THREE.Color().setHSL(hue / 360, 0.85, 0.15), [hue]);
+  const hex = `#${color.getHexString()}`;
 
-  const isElite = (dev.contributions || 0) > 500;
-  const floors = Math.floor(height / 3);
+  const contributions = dev.contributions || 10;
+  const repos = dev.repos || 3;
+  const height = Math.max(5, Math.min(60, contributions / 70));
+  const width = Math.max(4, Math.min(16, repos / 1.2));
+  const isElite = contributions > 300;
+  const floors = Math.max(1, Math.floor(height / 3.5));
 
   return (
     <RigidBody type="fixed" position={position} colliders="cuboid">
-      {/* Main building body */}
-      <mesh
-        position={[0, height / 2, 0]}
-        castShadow
-        receiveShadow
+      {/* Main tower */}
+      <mesh position={[0, height / 2, 0]} castShadow receiveShadow
         onClick={() => window.open(`https://github.com/${dev.username}`, "_blank")}
       >
         <boxGeometry args={[width, height, width]} />
         <meshStandardMaterial
-          color="#0d1117"
-          emissive={colorStr}
-          emissiveIntensity={isElite ? 0.15 : 0.08}
-          roughness={0.3}
-          metalness={0.7}
+          color={colorDark}
+          emissive={color}
+          emissiveIntensity={isElite ? 0.2 : 0.08}
+          roughness={0.2}
+          metalness={0.9}
         />
       </mesh>
 
-      {/* Glowing window strips — horizontal bands every 3 units */}
+      {/* Window rows — horizontal glowing strips */}
       {Array.from({ length: floors }).map((_, fi) => (
-        <mesh key={fi} position={[0, fi * 3 + 2, width / 2 + 0.05]} castShadow>
-          <planeGeometry args={[width * 0.8, 0.4]} />
-          <meshStandardMaterial
-            color={colorStr}
-            emissive={colorStr}
-            emissiveIntensity={isElite ? 3 : 1.5}
-            transparent
-            opacity={0.9}
-          />
+        <group key={fi}>
+          {/* Front face windows */}
+          <mesh position={[0, fi * 3.5 + 2, width / 2 + 0.02]}>
+            <planeGeometry args={[width * 0.75, 0.5]} />
+            <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 4 : 2} transparent opacity={0.95} />
+          </mesh>
+          {/* Back face */}
+          <mesh position={[0, fi * 3.5 + 2, -(width / 2 + 0.02)]} rotation={[0, Math.PI, 0]}>
+            <planeGeometry args={[width * 0.75, 0.5]} />
+            <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 4 : 2} transparent opacity={0.95} />
+          </mesh>
+          {/* Side faces */}
+          <mesh position={[width / 2 + 0.02, fi * 3.5 + 2, 0]} rotation={[0, Math.PI / 2, 0]}>
+            <planeGeometry args={[width * 0.75, 0.5]} />
+            <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 4 : 2} transparent opacity={0.95} />
+          </mesh>
+          <mesh position={[-(width / 2 + 0.02), fi * 3.5 + 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
+            <planeGeometry args={[width * 0.75, 0.5]} />
+            <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 4 : 2} transparent opacity={0.95} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* 4 Vertical neon corner edges */}
+      {([ [-1,-1], [-1,1], [1,-1], [1,1] ] as [number,number][]).map(([sx,sz], ci) => (
+        <mesh key={ci} position={[sx * (width/2 + 0.05), height/2, sz * (width/2 + 0.05)]}>
+          <boxGeometry args={[0.1, height + 0.2, 0.1]} />
+          <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 6 : 3} roughness={0} />
         </mesh>
       ))}
 
-      {/* Edge neon trim — 4 vertical corners */}
-      {[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sx, sz], ci) => (
-        <mesh key={ci} position={[sx * (width / 2), height / 2, sz * (width / 2)]}>
-          <boxGeometry args={[0.12, height, 0.12]} />
-          <meshStandardMaterial
-            color={colorStr}
-            emissive={colorStr}
-            emissiveIntensity={isElite ? 4 : 2}
-            roughness={0}
-          />
-        </mesh>
-      ))}
-
-      {/* Ground glow ring */}
+      {/* Ground glow pool */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[width / 2, width / 2 + 1.5, 32]} />
-        <meshBasicMaterial color={colorStr} transparent opacity={0.4} side={THREE.DoubleSide} />
+        <circleGeometry args={[width * 0.9, 32]} />
+        <meshBasicMaterial color={hex} transparent opacity={0.12} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <ringGeometry args={[width / 2, width * 0.9, 32]} />
+        <meshBasicMaterial color={hex} transparent opacity={0.25} />
       </mesh>
 
-      {/* Animated beacon on top */}
-      <Beacon height={height} color={colorStr} />
+      {/* Animated beacon */}
+      <AnimatedBeacon height={height} color={color} />
 
-      {/* Avatar — small, positioned above beacon */}
+      {/* Avatar */}
       {dev.avatar_url && (
-        <Html
-          position={[0, height + 4.5, 0]}
-          transform
-          distanceFactor={20}
-          occlude={false}
-          center
-        >
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }}>
-            <img
-              src={dev.avatar_url}
-              alt={dev.username}
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                border: `2px solid ${color}`,
-                boxShadow: `0 0 12px ${color}`,
-                display: 'block',
-              }}
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-            />
-          </div>
+        <Html position={[0, height + 4.2, 0]} transform distanceFactor={25} center occlude={false}>
+          <img
+            src={dev.avatar_url}
+            alt={dev.username}
+            style={{
+              width: '36px', height: '36px', borderRadius: '50%',
+              border: `2px solid ${hex}`,
+              boxShadow: `0 0 10px ${hex}, 0 0 20px ${hex}44`,
+              pointerEvents: 'none', display: 'block',
+            }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
         </Html>
       )}
 
-      {/* Username label */}
-      <Text
-        position={[0, height + 3.2, 0]}
-        fontSize={1.0}
-        color="white"
-        outlineWidth={0.08}
-        outlineColor="#000000"
-        anchorX="center"
-        anchorY="middle"
-      >
+      {/* Username */}
+      <Text position={[0, height + 2.8, 0]} fontSize={0.9} color="white"
+        outlineWidth={0.07} outlineColor="#000" anchorX="center" anchorY="middle">
         {dev.username}
       </Text>
 
-      {/* Stats sub-label */}
-      <Text
-        position={[0, height + 2.0, 0]}
-        fontSize={0.55}
-        color={colorStr}
-        outlineWidth={0.05}
-        outlineColor="#000000"
-        anchorX="center"
-        anchorY="middle"
-      >
-        {`${dev.contributions || 0} commits · ${dev.repos || 0} repos`}
+      {/* Stats */}
+      <Text position={[0, height + 1.8, 0]} fontSize={0.5} color={hex}
+        outlineWidth={0.04} outlineColor="#000" anchorX="center" anchorY="middle">
+        {`★ ${contributions} commits · ${repos} repos`}
       </Text>
     </RigidBody>
   );
