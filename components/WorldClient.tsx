@@ -6,9 +6,9 @@ import Ecctrl, { EcctrlJoystick, EcctrlProvider } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
-import * as THREE from "three";
 import HUD from "./HUD";
 import Chat from "./Chat";
+import LoadingScreen from "./LoadingScreen";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -32,16 +32,15 @@ function DevBuilding({ dev, position }: any) {
             <Image url={dev.avatar_url} scale={[width * 0.7, width * 0.7]} position={[0, height / 2, width / 2 + 0.1]} />
         </Float>
       )}
-      <Text position={[0, height + 1.5, 0]} fontSize={1.2} color="white" font="/fonts/Inter-Bold.ttf">
+      <Text position={[0, height + 1.5, 0]} fontSize={1.2} color="white">
         {dev.username.toUpperCase()}
       </Text>
     </RigidBody>
   );
 }
 
-function City() {
-  const { data: devs } = useSWR('/api/city', fetcher);
-  if (!devs || !Array.isArray(devs)) return null;
+function City({ devs }: { devs: any[] }) {
+  if (!devs) return null;
   return (
     <group>
       {devs.map((dev, i) => {
@@ -55,7 +54,7 @@ function City() {
 }
 
 export default function WorldClient({ username }: { username: string }) {
-  const { data: devs, isLoading } = useSWR('/api/city', fetcher);
+  const { data: devs } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
@@ -68,43 +67,44 @@ export default function WorldClient({ username }: { username: string }) {
     }).subscribe();
   }, []);
 
-  if (isLoading) return <div className="fixed inset-0 bg-black flex items-center justify-center text-white font-mono uppercase tracking-[0.2em] animate-pulse">Initializing Git World...</div>;
-
   return (
     <EcctrlProvider>
       <div className="w-screen h-screen bg-black overflow-hidden fixed inset-0">
-        <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
-        <Chat username={username} />
-        
-        {isTouch && <div className="fixed bottom-10 left-10 z-[200] opacity-60"><EcctrlJoystick /></div>}
+        {/* Loading Screen shows until BOTH data and 3D assets are ready */}
+        <Suspense fallback={<LoadingScreen devs={devs || []} />}>
+          {!devs && <LoadingScreen devs={[]} />}
+          
+          <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
+          <Chat username={username} />
+          
+          {isTouch && <div className="fixed bottom-10 left-10 z-[200] opacity-60"><EcctrlJoystick /></div>}
 
-        <Canvas shadows camera={{ fov: 50, position: [0, 20, 50] }}>
-          <fog attach="fog" args={['#09090b', 30, 250]} />
-          <Sky sunPosition={[100, 10, 100]} turbidity={0.1} rayleigh={0.5} />
-          <Stars radius={150} depth={50} count={7000} factor={4} saturation={0} />
-          <Environment preset="night" />
-          <ambientLight intensity={0.2} />
-          <directionalLight position={[50, 50, 50]} intensity={1} castShadow shadow-mapSize={1024} />
+          <Canvas shadows camera={{ fov: 50, position: [0, 20, 50] }}>
+            <fog attach="fog" args={['#09090b', 30, 250]} />
+            <Sky sunPosition={[100, 10, 100]} />
+            <Stars radius={150} depth={50} count={7000} factor={4} saturation={0} />
+            <Environment preset="night" />
+            <ambientLight intensity={0.2} />
+            <directionalLight position={[50, 50, 50]} intensity={1} castShadow />
 
-          <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-            <Ecctrl animated jumpVel={flyMode ? 0 : 8} maxVelLimit={flyMode ? 20 : 10} camInitDis={-10}>
-              <mesh position={[0, 1, 0]} castShadow>
-                <capsuleGeometry args={[0.4, 0.8, 4]} />
-                <meshStandardMaterial color="#4ade80" emissive="#4ade80" emissiveIntensity={0.5} />
-              </mesh>
-            </Ecctrl>
-            
-            <City />
-            
-            <RigidBody type="fixed">
-              <Grid infiniteGrid fadeDistance={300} sectionColor="#1e293b" cellColor="#0f172a" />
-              <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-                <planeGeometry args={[2000, 2000]} />
-                <meshStandardMaterial color="#09090b" />
-              </mesh>
-            </RigidBody>
-          </Physics>
-        </Canvas>
+            <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
+              <Ecctrl animated jumpVel={flyMode ? 0 : 8} maxVelLimit={flyMode ? 20 : 10}>
+                <mesh position={[0, 1, 0]} castShadow>
+                  <capsuleGeometry args={[0.4, 0.8, 4]} />
+                  <meshStandardMaterial color="#4ade80" emissive="#4ade80" emissiveIntensity={0.5} />
+                </mesh>
+              </Ecctrl>
+              <City devs={devs} />
+              <RigidBody type="fixed">
+                <Grid infiniteGrid fadeDistance={300} sectionColor="#1e293b" cellColor="#0f172a" />
+                <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+                  <planeGeometry args={[2000, 2000]} />
+                  <meshStandardMaterial color="#09090b" />
+                </mesh>
+              </RigidBody>
+            </Physics>
+          </Canvas>
+        </Suspense>
       </div>
     </EcctrlProvider>
   );
