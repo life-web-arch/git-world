@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Sky, Text, Image, Float, useProgress, Stars } from "@react-three/drei";
+import { Sky, Text, Stars, useProgress } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import EcctrlProvider from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
@@ -35,19 +35,21 @@ export default function WorldClient({ username }: { username: string }) {
     return () => { room.current?.unsubscribe(); };
   }, []);
 
-  // We only transition when API is done AND ThreeJS says assets are ready
-  const isReady = mounted && devs && !active && progress === 100;
+  // The loader stays visible until progress is high and data is here
+  const showLoader = !mounted || !devs || progress < 100;
 
   return (
     <div style={{ width: '100vw', height: '100vh', backgroundColor: '#050505', position: 'fixed', inset: 0, overflow: 'hidden' }}>
       
-      {!isReady && <LoadingScreen progress={progress || 10} />}
+      <LoadingScreen progress={progress} />
 
-      {isReady && (
+      {mounted && devs && (
         <EcctrlProvider>
-          <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
-          <Chat username={username} />
-          {isTouch && <div style={{ position: 'fixed', bottom: '40px', left: '40px', zIndex: 100, transform: 'scale(1.2)' }}><EcctrlJoystick /></div>}
+          <div style={{ opacity: showLoader ? 0 : 1, transition: 'opacity 1s ease-in-out' }}>
+            <HUD username={username} playersCount={Object.keys(players).length + 1} flyMode={flyMode} setFlyMode={setFlyMode} />
+            <Chat username={username} />
+            {isTouch && <div style={{ position: 'fixed', bottom: '40px', left: '40px', zIndex: 100, transform: 'scale(1.2)' }}><EcctrlJoystick /></div>}
+          </div>
 
           <Canvas shadows camera={{ fov: 45, position: [0, 20, 50] }} dpr={[1, 1.5]}>
             <color attach="background" args={['#050505']} />
