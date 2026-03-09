@@ -31,7 +31,7 @@ export default function WorldClient({ username }: { username: string }) {
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
     try {
       room.current = supabase.channel('git-world-live', { config: { broadcast: { self: false } } });
-      room.current.on('broadcast', { event: 'move' }, ({ payload }) => {
+      room.current.on('broadcast', { event: 'move' }, ({ payload }: { payload: any }) => {
         setPlayers(prev => ({ ...prev, [payload.username]: payload }));
       }).subscribe();
     } catch (e) { console.warn("Multiplayer disabled/error:", e); }
