@@ -3,7 +3,8 @@ import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Sky, Environment, Text, Grid, Stars, Image, Html, useProgress } from "@react-three/drei";
 // THE FIX: Import the provider
-import Ecctrl, { EcctrlJoystick, EcctrlProvider } from "ecctrl";
+import Ecctrl, { EcctrlJoystick } from "ecctrl";
+import EcctrlProvider from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
