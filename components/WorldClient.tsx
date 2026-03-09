@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Rocket } from "lucide-react";
+import Chat from "./Chat";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -62,7 +63,7 @@ function DevBuilding({ dev, position }: { dev: any, position:[number, number, nu
   const height = Math.max(5, (dev.contributions || 10) / 100);
   const width = Math.max(4, Math.min(25, (dev.repos || 5) / 2));
   return (
-    <RigidBody type="fixed" position={position}>
+    <RigidBody type="fixed" position={position} onClick={() => window.open(`https://github.com/${dev.username}`, "_blank")}>
       <mesh position={[0, height / 2, 0]}>
         <boxGeometry args={[width, height, width]} />
         <meshStandardMaterial color={`hsl(${(dev.username.length * 25) % 360}, 70%, 20%)`} emissive={`hsl(${(dev.username.length * 25) % 360}, 70%, 40%)`} emissiveIntensity={0.5} />
@@ -114,7 +115,8 @@ export default function WorldClient({ username }: { username: string }) {
     <div className="w-screen h-screen bg-black fixed inset-0">
       <div className="fixed top-4 left-4 z-50 text-white font-mono bg-zinc-900/80 p-4 rounded-xl backdrop-blur-md border border-white/10 shadow-2xl w-auto max-w-xs">
         <h1 className="text-xl font-bold text-green-400 border-b border-green-400/20 pb-2">Git World</h1>
-        <div className="mt-2 text-sm text-zinc-300">Connected as: <span className="text-white font-bold">{username}</span></div>
+        <div className="mt-2 text-sm text-zinc-300"><Chat username={username} />
+        Connected as: <span className="text-white font-bold">{username}</span></div>
         <div className="text-sm text-purple-300">Online Players: {Object.keys(players).length + 1}</div>
         <div className="mt-3 pt-3 border-t border-zinc-700">
             <button 
