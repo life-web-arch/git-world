@@ -1,64 +1,35 @@
 "use client";
 import { useProgress } from "@react-three/drei";
-import { useEffect, useState } from "react";
 
-export default function LoadingScreen({ devs }: { devs: any[] }) {
+export default function LoadingScreen({ devs, active }: { devs: any[], active: boolean }) {
   const { progress } = useProgress();
-  const [bootLogs, setBootLogs] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (devs && devs.length > 0) {
-      const interval = setInterval(() => {
-        setBootLogs(prev => {
-          const nextDev = devs[prev.length % devs.length]?.username || "Unknown";
-          return [...prev, `Mapped: ${nextDev}... OK`].slice(-8);
-        });
-      }, 150);
-      return () => clearInterval(interval);
-    }
-  }, [devs]);
+  if (!active) return null;
 
   return (
-    <div className="fixed inset-0 z-[500] bg-[#09090b] flex flex-col items-center justify-center font-mono">
-      <div className="w-80 space-y-6">
-        {/* Animated Icon */}
-        <div className="flex justify-center">
-          <div className="relative w-16 h-16">
-            <div className="absolute inset-0 border-4 border-green-500/20 rounded-full"></div>
+    <div className="fixed inset-0 z-[999] bg-[#050505] flex flex-col items-center justify-center font-mono p-6">
+      <div className="max-w-xs w-full space-y-8">
+        <div className="space-y-2 text-center">
+          <h1 className="text-green-500 text-2xl font-black tracking-tighter">GIT WORLD</h1>
+          <div className="h-1 w-full bg-zinc-900 rounded-full overflow-hidden">
             <div 
-              className="absolute inset-0 border-4 border-green-500 rounded-full border-t-transparent animate-spin"
-              style={{ animationDuration: '0.8s' }}
-            ></div>
+              className="h-full bg-green-500 shadow-[0_0_15px_#22c55e] transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
           </div>
-        </div>
-
-        {/* Status Text */}
-        <div className="space-y-1">
-          <h2 className="text-green-500 text-sm font-bold tracking-widest text-center uppercase">
-            Synchronizing World
-          </h2>
-          <p className="text-zinc-500 text-[10px] text-center uppercase">
-            Assets: {Math.round(progress)}% Loaded
+          <p className="text-[10px] text-zinc-500 uppercase tracking-widest pt-2">
+            Compiling Reality: {Math.round(progress)}%
           </p>
         </div>
 
-        {/* Progress Bar */}
-        <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-green-500 transition-all duration-300 ease-out"
-            style={{ width: `${progress}%` }}
-          ></div>
-        </div>
-
-        {/* Boot Logs */}
-        <div className="bg-black/40 border border-white/5 rounded-lg p-3 h-32 overflow-hidden shadow-inner">
-          {bootLogs.map((log, i) => (
-            <div key={i} className="text-[9px] text-zinc-400 leading-tight">
-              <span className="text-green-900 pr-2">[{new Date().toLocaleTimeString()}]</span>
-              {log}
-            </div>
-          ))}
-          {bootLogs.length === 0 && <div className="text-[9px] text-zinc-600 italic">Connecting to GitHub Grid...</div>}
+        <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-4 h-40 overflow-hidden text-[9px] space-y-1">
+           <div className="text-green-800">[SYS] Initializing WebGL 2.0...</div>
+           <div className="text-green-700">[SYS] Connecting to GitHub GraphQL...</div>
+           {devs.slice(0, 10).map((d, i) => (
+             <div key={i} className="text-zinc-500 animate-pulse">
+               [DATA] Mapping {d.username}... <span className="text-green-500">READY</span>
+             </div>
+           ))}
         </div>
       </div>
     </div>
