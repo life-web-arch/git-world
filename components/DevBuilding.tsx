@@ -1,6 +1,6 @@
 "use client";
 import { RigidBody } from "@react-three/rapier";
-import { Text, Html } from "@react-three/drei";
+import { Text, Html, Billboard } from "@react-three/drei";
 import { useRef, useMemo, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -27,6 +27,7 @@ function getLevel(contributions: number, repos: number) {
   return           { level: 1,  title: "NEWBIE", xp };
 }
 
+// ProfileCard rendered OUTSIDE canvas — no <style> tags crash
 function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: () => void }) {
   const { level, title, xp } = getLevel(dev.contributions || 0, dev.repos || 0);
   const nextXp = [100,300,800,2000,5000,10000,20000,50000,100000,999999][level - 1];
@@ -41,12 +42,9 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
       padding: '20px 20px 32px',
       fontFamily: 'monospace',
       boxShadow: `0 -8px 40px ${hex}44`,
-      animation: 'slideUp 0.3s ease-out',
+      transform: 'translateY(0)',
+      transition: 'transform 0.3s ease-out',
     }}>
-      <style>{`
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-      `}</style>
-
       {/* Close bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ width: 40, height: 4, background: '#333', borderRadius: 2, margin: '0 auto' }} />
@@ -160,12 +158,10 @@ function AnimatedBeacon({ height, color }: { height: number; color: THREE.Color 
   );
 }
 
-// Individual window squares on building faces
 function WindowGrid({ width, height, hex, isElite }: { width: number, height: number, hex: string, isElite: boolean }) {
   const cols = Math.max(2, Math.floor(width / 2.2));
   const rows = Math.max(2, Math.floor(height / 2.5));
   const winW = (width * 0.7) / cols;
-  const winH = 0.7;
   const faces = [
     { rot: [0, 0, 0] as [number,number,number], pos: [0, 0, width / 2 + 0.02] as [number,number,number] },
     { rot: [0, Math.PI, 0] as [number,number,number], pos: [0, 0, -(width / 2 + 0.02)] as [number,number,number] },
@@ -179,7 +175,7 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
         Array.from({ length: rows }).map((_, ri) =>
           Array.from({ length: cols }).map((_, ci) => {
             const seed = fi * 1000 + ri * 100 + ci;
-            const isLit = (seed * 2654435761) % 100 > 25; // ~75% lit
+            const isLit = (seed * 2654435761) % 100 > 25;
             if (!isLit) return null;
             const xOffset = (ci - (cols - 1) / 2) * (width * 0.7 / cols);
             const yPos = ri * 2.5 + 1.8;
@@ -193,7 +189,7 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
                 ]}
                 rotation={face.rot}
               >
-                <planeGeometry args={[winW * 0.65, winH * 0.75]} />
+                <planeGeometry args={[winW * 0.65, 0.7 * 0.75]} />
                 <meshStandardMaterial
                   color={hex}
                   emissive={hex}
@@ -215,8 +211,6 @@ export default function DevBuilding({ dev, position, theme }: any) {
   if (!dev) return null;
 
   const hue = usernameToHue(dev.username || "dev");
-
-  // Theme-aware color override
   const themeColors: Record<string, number> = {
     sunset: 30, neon: 280, emerald: 140, midnight: 210
   };
@@ -251,10 +245,8 @@ export default function DevBuilding({ dev, position, theme }: any) {
           />
         </mesh>
 
-        {/* Individual window squares */}
         <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
 
-        {/* Neon corner edges */}
         {([ [-1,-1], [-1,1], [1,-1], [1,1] ] as [number,number][]).map(([sx,sz], ci) => (
           <mesh key={ci} position={[sx * (width/2 + 0.06), height/2, sz * (width/2 + 0.06)]}>
             <boxGeometry args={[0.1, height + 0.3, 0.1]} />
@@ -262,13 +254,11 @@ export default function DevBuilding({ dev, position, theme }: any) {
           </mesh>
         ))}
 
-        {/* Rooftop ring */}
         <mesh position={[0, height + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[width * 0.45, width * 0.52, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.9} />
         </mesh>
 
-        {/* Ground glow */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
           <circleGeometry args={[width * 1.1, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.15} />
@@ -281,28 +271,35 @@ export default function DevBuilding({ dev, position, theme }: any) {
         <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width * 3} decay={2} />
         <AnimatedBeacon height={height} color={color} />
 
-        {dev.avatar_url && (
-          <Html position={[0, height + 4.5, 0]} transform distanceFactor={25} center occlude={false}>
-            <img src={dev.avatar_url} alt={dev.username} style={{
-              width: 38, height: 38, borderRadius: '50%',
-              border: `2px solid ${hex}`,
-              boxShadow: `0 0 12px ${hex}, 0 0 24px ${hex}66`,
-              pointerEvents: 'none', display: 'block',
-            }} onError={e => { e.currentTarget.style.display = 'none'; }} />
-          </Html>
-        )}
-
-        <Text position={[0, height + 3.0, 0]} fontSize={0.88} color="white"
-          outlineWidth={0.08} outlineColor="#000" anchorX="center" anchorY="middle">
-          {dev.username}
-        </Text>
-        <Text position={[0, height + 2.0, 0]} fontSize={0.48} color={hex}
-          outlineWidth={0.04} outlineColor="#000" anchorX="center" anchorY="middle">
-          {`★ ${contributions} · ${repos} repos`}
-        </Text>
+        {/* BILLBOARD — always faces camera, rotates 360° */}
+        <Billboard position={[0, height + 5.5, 0]} follow={true} lockX={false} lockY={false} lockZ={false}>
+          {dev.avatar_url && (
+            <Html transform={false} center occlude={false} style={{ pointerEvents: 'none' }}>
+              <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
+                <img
+                  src={dev.avatar_url}
+                  alt={dev.username}
+                  style={{
+                    width: 40, height: 40, borderRadius: '50%',
+                    border: `2px solid ${hex}`,
+                    boxShadow: `0 0 12px ${hex}, 0 0 24px ${hex}66`,
+                    display: 'block', margin: '0 auto',
+                  }}
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+            </Html>
+          )}
+          <Text fontSize={0.88} color="white" outlineWidth={0.08} outlineColor="#000" anchorX="center" anchorY="middle" position={[0, -1.2, 0]}>
+            {dev.username}
+          </Text>
+          <Text fontSize={0.48} color={hex} outlineWidth={0.04} outlineColor="#000" anchorX="center" anchorY="middle" position={[0, -2.1, 0]}>
+            {`★ ${contributions} · ${repos} repos`}
+          </Text>
+        </Billboard>
       </RigidBody>
 
-      {/* Profile card rendered in DOM */}
+      {/* Profile card is rendered in DOM, OUTSIDE canvas — no R3F namespace crash */}
       {showCard && <ProfileCard dev={dev} hex={hex} onClose={() => setShowCard(false)} />}
     </>
   );

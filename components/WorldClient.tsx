@@ -3,7 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Stars, useProgress, Grid, Cloud } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense, useCallback } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
 import HUD from "./HUD";
@@ -16,7 +16,6 @@ import { useFrame, useThree } from "@react-three/fiber";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-// Theme definitions
 export const THEMES = {
   sunset:   { sky: "#1a0a00", horizon: "#c0440a", fog: "#2a0f00", fogDensity: 0.0022, ambient: "#3a1a0a", ground: "#120800", grid: "#2a1000", gridSection: "#3a1800" },
   midnight: { sky: "#020818", horizon: "#0a2a40", fog: "#020c1a", fogDensity: 0.0028, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060" },
@@ -41,12 +40,10 @@ function SunsetSky({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
   return (
     <>
-      {/* Sky dome */}
       <mesh scale={[-1, 1, 1]}>
         <sphereGeometry args={[790, 32, 32]} />
         <meshBasicMaterial color={t.sky} side={THREE.BackSide} />
       </mesh>
-      {/* Horizon glow band */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 2, 0]}>
         <ringGeometry args={[300, 800, 64]} />
         <meshBasicMaterial color={t.horizon} transparent opacity={0.4} side={THREE.DoubleSide} />
@@ -61,7 +58,6 @@ function SunsetSky({ theme }: { theme: ThemeName }) {
 
 function Moon({ theme }: { theme: ThemeName }) {
   if (theme === 'sunset') {
-    // Sun for sunset theme
     return (
       <group position={[-200, 40, -400]}>
         <mesh>
@@ -190,15 +186,12 @@ function buildTreePositions(): [number, number, number][] {
 }
 const TREE_POSITIONS = buildTreePositions();
 
-// Dense city layout — buildings packed tight like a real skyline
 function buildCityLayout(count: number): [number, number, number][] {
   const positions: [number, number, number][] = [];
-  // Core downtown — very tight
   const cols = Math.ceil(Math.sqrt(count));
   for (let i = 0; i < count; i++) {
     const col = i % cols;
     const row = Math.floor(i / cols);
-    // Staggered grid with slight random offset (deterministic)
     const offsetX = ((i * 7.3) % 8) - 4;
     const offsetZ = ((i * 11.7) % 8) - 4;
     const x = (col - cols / 2) * 22 + offsetX;
@@ -206,6 +199,115 @@ function buildCityLayout(count: number): [number, number, number][] {
     positions.push([x, 0, z]);
   }
   return positions;
+}
+
+// FlyController — keyboard WASD + QE for up/down, touch-friendly
+function FlyController({ active }: { active: boolean }) {
+  const { camera } = useThree();
+  const keys = useRef<Record<string, boolean>>({});
+  const velocity = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (e: KeyboardEvent) => { keys.current[e.code] = true; };
+    const onKeyUp   = (e: KeyboardEvent) => { keys.current[e.code] = false; };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [active]);
+
+  useFrame((_, delta) => {
+    if (!active) return;
+    const speed = 28;
+    const dampening = 0.88;
+    const dir = new THREE.Vector3();
+
+    if (keys.current['KeyW'] || keys.current['ArrowUp'])    dir.z -= 1;
+    if (keys.current['KeyS'] || keys.current['ArrowDown'])  dir.z += 1;
+    if (keys.current['KeyA'] || keys.current['ArrowLeft'])  dir.x -= 1;
+    if (keys.current['KeyD'] || keys.current['ArrowRight']) dir.x += 1;
+    if (keys.current['KeyQ'] || keys.current['Space'])      dir.y += 1;
+    if (keys.current['KeyE'] || keys.current['ShiftLeft'])  dir.y -= 1;
+
+    if (dir.length() > 0) {
+      dir.normalize();
+      // Move relative to camera facing direction
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      forward.normalize();
+      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
+
+      const move = new THREE.Vector3()
+        .addScaledVector(right, dir.x)
+        .addScaledVector(new THREE.Vector3(0,1,0), dir.y)
+        .addScaledVector(forward, -dir.z);
+
+      velocity.current.addScaledVector(move, speed * delta);
+    }
+
+    velocity.current.multiplyScalar(dampening);
+    camera.position.addScaledVector(velocity.current, delta);
+  });
+
+  return null;
+}
+
+// Camera zoom via scroll wheel + pinch on touch
+function CameraZoom() {
+  const { camera, gl } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+
+    // Mouse wheel zoom
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 1.1 : 0.9;
+      // Move camera forward/back
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      camera.position.addScaledVector(dir, e.deltaY < 0 ? 3 : -3);
+    };
+
+    // Pinch zoom for touch
+    let lastPinchDist = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        lastPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const delta = lastPinchDist - dist;
+        lastPinchDist = dist;
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        camera.position.addScaledVector(dir, -delta * 0.15);
+      }
+    };
+
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: true });
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [camera, gl]);
+
+  return null;
 }
 
 function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, theme: ThemeName }) {
@@ -216,6 +318,7 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
     <>
       <SceneFog theme={theme} />
       <SunsetSky theme={theme} />
+      <CameraZoom />
       <Stars radius={350} depth={80} count={theme === 'sunset' ? 2000 : 7000} factor={6} saturation={0.7} fade speed={0.12} />
 
       <Cloud position={[-80, 55, -220]} speed={0.1} opacity={0.18} color={theme === 'sunset' ? "#804020" : "#1a3060"} scale={4} />
@@ -237,28 +340,34 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
         shadow-camera-top={200}
         shadow-camera-bottom={-200}
       />
-      <pointLight position={[0, 3, -50]} intensity={700} color={theme === 'sunset' ? "#ff4400" : "#ff4400"} distance={400} decay={2} />
+      <pointLight position={[0, 3, -50]} intensity={700} color="#ff4400" distance={400} decay={2} />
       <pointLight position={[130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ff8800" : "#2255ff"} distance={450} decay={2} />
       <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
 
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-        <Ecctrl
-          animated={false}
-          jumpVel={flyMode ? 0 : 8}
-          maxVelLimit={flyMode ? 20 : 10}
-          camInitDis={-8} camMinDis={-3} camMaxDis={-15}
-          camInitDir={{ x: -0.15, y: 0 }}
-          position={[0, 4, 80]}
-        >
-          <mesh castShadow>
-            <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
-            <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
-          </mesh>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
-            <ringGeometry args={[0.28, 0.55, 16]} />
-            <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
-          </mesh>
-        </Ecctrl>
+        {/* Only render Ecctrl when NOT in fly mode */}
+        {!flyMode && (
+          <Ecctrl
+            animated={false}
+            jumpVel={8}
+            maxVelLimit={10}
+            camInitDis={-8} camMinDis={-3} camMaxDis={-15}
+            camInitDir={{ x: -0.15, y: 0 }}
+            position={[0, 4, 80]}
+          >
+            <mesh castShadow>
+              <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
+              <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
+              <ringGeometry args={[0.28, 0.55, 16]} />
+              <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
+            </mesh>
+          </Ecctrl>
+        )}
+
+        {/* Free camera fly controller */}
+        <FlyController active={flyMode} />
 
         {devs?.map((dev: any, i: number) => (
           <DevBuilding
@@ -294,7 +403,6 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
   );
 }
 
-// Activity feed ticker
 function ActivityFeed({ devs }: { devs: any[] }) {
   const items = devs?.slice(0, 20).map(d =>
     `⬡ ${d.username} · ${d.contributions} commits · ${d.repos} repos`
@@ -324,7 +432,12 @@ function ActivityFeed({ devs }: { devs: any[] }) {
 
 export default function WorldClient({ username }: { username: string }) {
   const [mounted, setMounted] = useState(false);
-  const { data: devs } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
+  // physicsReady delays rendering until after a short settle time
+  const [physicsReady, setPhysicsReady] = useState(false);
+  const { data: devs } = useSWR('/api/city', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000, // don't re-fetch more than once per minute
+  });
   const { progress } = useProgress();
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
@@ -335,6 +448,11 @@ export default function WorldClient({ username }: { username: string }) {
   useEffect(() => {
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
+    // Give physics engine time to settle BEFORE enabling joystick/input
+    // This prevents the capsule from falling through the world
+    const timer = setTimeout(() => setPhysicsReady(true), 1800);
+
     if (typeof window !== 'undefined') {
       try {
         room.current = supabase.channel('presence')
@@ -343,10 +461,19 @@ export default function WorldClient({ username }: { username: string }) {
           }).subscribe();
       } catch (e) { console.error(e); }
     }
-    return () => { room.current?.unsubscribe(); };
+    return () => {
+      clearTimeout(timer);
+      room.current?.unsubscribe();
+    };
   }, []);
 
   const isDataReady = mounted && devs;
+  const showJoystick = isTouch && physicsReady && !flyMode;
+
+  // Fly mode toggle — also resets camera to a good position
+  const handleFlyToggle = useCallback(() => {
+    setFlyMode(f => !f);
+  }, []);
 
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
@@ -370,7 +497,7 @@ export default function WorldClient({ username }: { username: string }) {
             username={username}
             playersCount={Object.keys(players).length + 1}
             flyMode={flyMode}
-            setFlyMode={setFlyMode}
+            setFlyMode={handleFlyToggle}
             devs={devs}
             theme={theme}
             setTheme={setTheme}
@@ -378,7 +505,42 @@ export default function WorldClient({ username }: { username: string }) {
           <Chat username={username} />
           <ActivityFeed devs={devs} />
 
-          {isTouch && (
+          {/* Fly mode touch controls overlay */}
+          {isTouch && flyMode && (
+            <div style={{
+              position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 40, display: 'flex', gap: 12,
+            }}>
+              {[
+                { label: '↑', code: 'ArrowUp' },
+                { label: '↓', code: 'ArrowDown' },
+                { label: '←', code: 'ArrowLeft' },
+                { label: '→', code: 'ArrowRight' },
+                { label: '▲ UP', code: 'Space' },
+                { label: '▼ DN', code: 'ShiftLeft' },
+              ].map(({ label, code }) => (
+                <button
+                  key={code}
+                  onPointerDown={() => { window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true })); }}
+                  onPointerUp={() => { window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); }}
+                  onPointerLeave={() => { window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); }}
+                  style={{
+                    width: 52, height: 52, borderRadius: 10,
+                    background: 'rgba(59,130,246,0.25)',
+                    border: '1px solid rgba(59,130,246,0.5)',
+                    color: '#3b82f6', fontSize: 11, fontFamily: 'monospace',
+                    fontWeight: 700, cursor: 'pointer', userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Walk joystick — only shown after physics is ready */}
+          {showJoystick && (
             <div style={{
               position: 'fixed', bottom: '36px', left: '8px', zIndex: 40,
               transform: 'scale(0.58)', transformOrigin: 'bottom left',
