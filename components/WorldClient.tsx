@@ -1,9 +1,9 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
-import { Physics, RigidBody } from "@react-three/rapier";
-import { Stars, useProgress, Grid, Cloud } from "@react-three/drei";
+import { Physics, RigidBody, CuboidCollider } from "@react-three/rapier";
+import { Stars, Grid, useProgress, PerspectiveCamera } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
-import { useEffect, useState, useRef, Suspense, useCallback } from "react";
+import { useEffect, useState, useRef, Suspense, useMemo } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
 import HUD from "./HUD";
@@ -17,536 +17,350 @@ import { useFrame, useThree } from "@react-three/fiber";
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export const THEMES = {
-  sunset:   { sky: "#1a0a00", horizon: "#c0440a", fog: "#2a0f00", fogDensity: 0.0022, ambient: "#3a1a0a", ground: "#120800", grid: "#2a1000", gridSection: "#3a1800" },
-  midnight: { sky: "#020818", horizon: "#0a2a40", fog: "#020c1a", fogDensity: 0.0028, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060" },
-  neon:     { sky: "#080012", horizon: "#2a0050", fog: "#0d0018", fogDensity: 0.0025, ambient: "#1a0030", ground: "#0a0018", grid: "#1a0040", gridSection: "#2a0060" },
-  emerald:  { sky: "#001a0a", horizon: "#004020", fog: "#001a08", fogDensity: 0.0026, ambient: "#002a10", ground: "#001208", grid: "#002a14", gridSection: "#003a1c" },
+  sunset:   { sky: "#1a0800", horizon: "#cc3300", fogNear: 60, fogFar: 850, ambient: "#301008", ground: "#110400", grid: "#2a0e00", gridSection: "#401800", sunColor: "#ff6622", sunPos: [-300,55,-450] as [number,number,number] },
+  midnight: { sky: "#020818", horizon: "#0a2a40", fogNear: 60, fogFar: 850, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060", sunColor: "#b0d4ff", sunPos: [180,110,-350] as [number,number,number] },
+  neon:     { sky: "#060012", horizon: "#330060", fogNear: 60, fogFar: 850, ambient: "#180030", ground: "#060010", grid: "#150035", gridSection: "#220055", sunColor: "#cc44ff", sunPos: [0,80,-300] as [number,number,number] },
+  emerald:  { sky: "#001408", horizon: "#003820", fogNear: 60, fogFar: 850, ambient: "#002210", ground: "#000e06", grid: "#001e10", gridSection: "#002e18", sunColor: "#44ffaa", sunPos: [100,80,-300] as [number,number,number] },
 };
-
 export type ThemeName = keyof typeof THEMES;
+
+// Spawn on top of a solid platform at y=20, platform sits on ground
+// Character starts at y=22 (above platform), lands safely even if ground glitches
+const PLATFORM_Y = 0;
+const SPAWN_POS: [number,number,number] = [0, 22, 115];
 
 function SceneFog({ theme }: { theme: ThemeName }) {
   const { scene } = useThree();
   const t = THEMES[theme];
   useEffect(() => {
-    scene.fog = new THREE.FogExp2(t.fog, t.fogDensity);
+    scene.fog = new THREE.Fog(t.sky, t.fogNear, t.fogFar);
     scene.background = new THREE.Color(t.sky);
     return () => { scene.fog = null; };
   }, [scene, theme]);
   return null;
 }
 
-function SunsetSky({ theme }: { theme: ThemeName }) {
+function ThemeSky({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
   return (
     <>
-      <mesh scale={[-1, 1, 1]}>
-        <sphereGeometry args={[790, 32, 32]} />
-        <meshBasicMaterial color={t.sky} side={THREE.BackSide} />
+      <mesh renderOrder={-2}>
+        <sphereGeometry args={[820, 32, 16]} />
+        <meshBasicMaterial color={t.sky} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 2, 0]}>
-        <ringGeometry args={[300, 800, 64]} />
-        <meshBasicMaterial color={t.horizon} transparent opacity={0.4} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.5, 0]}>
-        <ringGeometry args={[100, 300, 64]} />
-        <meshBasicMaterial color={t.horizon} transparent opacity={0.2} side={THREE.DoubleSide} />
+      <mesh rotation={[-Math.PI/2,0,0]} position={[0,4,0]} renderOrder={-1}>
+        <ringGeometry args={[200,750,64]} />
+        <meshBasicMaterial color={t.horizon} transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
     </>
   );
 }
 
-function Moon({ theme }: { theme: ThemeName }) {
-  if (theme === 'sunset') {
-    return (
-      <group position={[-200, 40, -400]}>
-        <mesh>
-          <sphereGeometry args={[18, 32, 32]} />
-          <meshStandardMaterial color="#ff8800" emissive="#ff5500" emissiveIntensity={1.5} roughness={1} />
-        </mesh>
-        <mesh>
-          <sphereGeometry args={[28, 16, 16]} />
-          <meshBasicMaterial color="#ff4400" transparent opacity={0.08} side={THREE.BackSide} />
-        </mesh>
-        <pointLight color="#ff6600" intensity={800} distance={1600} decay={2} />
-      </group>
-    );
-  }
+function CelestialBody({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  const big = theme === 'sunset';
   return (
-    <group position={[180, 110, -350]}>
+    <group position={t.sunPos}>
       <mesh>
-        <sphereGeometry args={[9, 32, 32]} />
-        <meshStandardMaterial color="#e8f4ff" emissive="#c8e0ff" emissiveIntensity={0.8} roughness={0.9} />
+        <sphereGeometry args={[big ? 18 : 9, 24, 24]} />
+        <meshStandardMaterial color={t.sunColor} emissive={t.sunColor} emissiveIntensity={big ? 1.0 : 0.7} roughness={1} />
       </mesh>
-      <mesh>
-        <sphereGeometry args={[13, 16, 16]} />
-        <meshBasicMaterial color="#aaccff" transparent opacity={0.06} side={THREE.BackSide} />
-      </mesh>
-      <pointLight color="#b0d4ff" intensity={600} distance={1400} decay={2} />
+      <pointLight color={t.sunColor} intensity={big ? 700 : 500} distance={2000} decay={2} />
     </group>
   );
 }
 
-function Tree({ position }: { position: [number, number, number] }) {
-  const seed = position[0] * 13.7 + position[2] * 7.3;
-  const trunkH = 2.5 + (Math.abs(Math.sin(seed)) * 1.5);
-  const canopyR = 1.8 + (Math.abs(Math.cos(seed)) * 1.4);
-  const hues = [145, 160, 130, 170, 120];
-  const hue = hues[Math.abs(Math.floor(seed * 3.7)) % hues.length];
-  const sat = 45 + (Math.abs(Math.sin(seed * 2)) * 20);
-  const light = 14 + (Math.abs(Math.cos(seed * 3)) * 10);
-  const green = `hsl(${hue}, ${sat}%, ${light}%)`;
+function Tree({ position, s=1 }: { position:[number,number,number], s?:number }) {
+  const seed = position[0]*13.7 + position[2]*7.3;
+  const th = (1.2+Math.abs(Math.sin(seed))*0.6)*s;
+  const cr = (0.8+Math.abs(Math.cos(seed))*0.6)*s;
+  const hue = [145,155,130,165][Math.abs(Math.floor(seed*3.7))%4];
+  const g = `hsl(${hue},48%,14%)`;
   return (
     <group position={position}>
-      <mesh position={[0, trunkH / 2, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.32, trunkH, 6]} />
-        <meshStandardMaterial color="#1a0c06" roughness={1} />
-      </mesh>
-      <mesh position={[0, trunkH + canopyR * 0.5, 0]} castShadow>
-        <coneGeometry args={[canopyR, canopyR * 1.5, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
-      </mesh>
-      <mesh position={[0, trunkH + canopyR * 1.1, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.68, canopyR * 1.2, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
-      </mesh>
-      <mesh position={[0, trunkH + canopyR * 1.65, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.38, canopyR * 0.85, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.15} />
-      </mesh>
+      <mesh position={[0,th/2,0]}><cylinderGeometry args={[0.10,0.16,th,6]}/><meshStandardMaterial color="#160b04" roughness={1}/></mesh>
+      <mesh position={[0,th+cr*0.5,0]}><coneGeometry args={[cr,cr*1.6,7]}/><meshStandardMaterial color={g} roughness={0.85} emissive={g} emissiveIntensity={0.06}/></mesh>
+      <mesh position={[0,th+cr*1.1,0]}><coneGeometry args={[cr*0.65,cr*1.2,7]}/><meshStandardMaterial color={g} roughness={0.85}/></mesh>
+      <mesh position={[0,th+cr*1.65,0]}><coneGeometry args={[cr*0.35,cr*0.8,7]}/><meshStandardMaterial color={g} roughness={0.85}/></mesh>
     </group>
   );
 }
 
-function WaterBody({ position, sx, sz }: { position: [number,number,number], sx: number, sz: number }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((s) => {
-    if (ref.current) {
-      (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity =
-        0.45 + Math.sin(s.clock.elapsedTime * 0.5) * 0.2;
-    }
-  });
+function Roads() {
   return (
-    <group position={position} scale={[sx, 1, sz]}>
-      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-        <circleGeometry args={[1, 48]} />
-        <meshStandardMaterial color="#041220" emissive="#0a4070" emissiveIntensity={0.45} roughness={0.02} metalness={0.98} transparent opacity={0.92} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <ringGeometry args={[0.9, 1.1, 48]} />
-        <meshBasicMaterial color="#1a8090" transparent opacity={0.6} />
-      </mesh>
-    </group>
-  );
-}
-
-function Fireflies() {
-  const count = 30;
-  const data = useRef(Array.from({ length: count }, (_, i) => ({
-    pos: new THREE.Vector3((((i * 137.5) % 300) - 150), 1.2 + ((i * 73) % 9), (((i * 89.3) % 300) - 150)),
-    phase: i * 0.8,
-  })));
-  const refs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame((s) => {
-    const t = s.clock.elapsedTime;
-    refs.current.forEach((m, i) => {
-      if (!m) return;
-      const d = data.current[i];
-      const pulse = Math.sin(t * 2.2 + d.phase) * 0.5 + 0.5;
-      (m.material as THREE.MeshBasicMaterial).opacity = pulse * 0.9;
-      m.position.y = d.pos.y + Math.sin(t * 0.55 + d.phase) * 1.1;
-      m.position.x = d.pos.x + Math.cos(t * 0.3 + d.phase * 0.5) * 0.8;
-    });
-  });
-  return (
-    <>
-      {data.current.map((d, i) => (
-        <mesh key={i} ref={el => { refs.current[i] = el; }} position={d.pos}>
-          <sphereGeometry args={[0.08, 4, 4]} />
-          <meshBasicMaterial color="#88ffaa" transparent opacity={0.7} />
+    <group position={[0,0.015,0]}>
+      {([-75,-15,45] as number[]).map(x=>(
+        <mesh key={`v${x}`} rotation={[-Math.PI/2,0,0]} position={[x,0,0]}>
+          <planeGeometry args={[9,800]}/><meshStandardMaterial color="#070707" roughness={0.98}/>
         </mesh>
       ))}
+      {([-110,-50,10,70,130] as number[]).map(z=>(
+        <mesh key={`h${z}`} rotation={[-Math.PI/2,0,0]} position={[0,0,z]}>
+          <planeGeometry args={[800,9]}/><meshStandardMaterial color="#070707" roughness={0.98}/>
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function StreetLamps() {
+  const spots: [number,number,number][] = [];
+  [-75,-15,45].forEach(x => { for(let z=-180;z<=180;z+=35) spots.push([x+6,0,z]); });
+  return (
+    <group>
+      {spots.map((pos,i)=>(
+        <group key={i} position={pos}>
+          <mesh position={[0,3.5,0]}><cylinderGeometry args={[0.06,0.09,7,5]}/><meshStandardMaterial color="#151515" roughness={0.9}/></mesh>
+          <mesh position={[0,7.2,0]}><sphereGeometry args={[0.28,8,8]}/><meshStandardMaterial color="#ffdd66" emissive="#ffdd66" emissiveIntensity={4}/></mesh>
+          <pointLight position={[0,7,0]} color="#ffcc44" intensity={16} distance={26} decay={2}/>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function BackgroundSkyline({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  const buildings = useMemo(()=>{
+    const r=[];
+    for(let i=0;i<55;i++) r.push({ x:((i*53.7)%700)-350, z:-300-Math.floor(i/14)*50, h:25+(i*19.3%55), w:9+(i*7.1%12), key:i });
+    return r;
+  },[]);
+  return (
+    <group>
+      {buildings.map(b=>(
+        <mesh key={b.key} position={[b.x,b.h/2,b.z]}>
+          <boxGeometry args={[b.w,b.h,b.w*0.7]}/>
+          <meshStandardMaterial color="#040608" emissive={t.horizon} emissiveIntensity={0.05} roughness={0.15} metalness={0.95}/>
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+const PARK_TREES = (()=>{
+  const out:[number,number,number][]=[];
+  for(let i=0;i<80;i++){
+    const a=(i/80)*Math.PI*2, r=185+(i%5)*10;
+    out.push([Math.cos(a)*r,0,Math.sin(a)*r]);
+  }
+  return out;
+})();
+
+function buildCityLayout(count:number):[number,number,number][]{
+  const positions:[number,number,number][]=[];
+  const cols=[-95,-45,5,55], rows=[-145,-85,-25,35,95];
+  for(let i=0;i<count;i++){
+    const col=i%cols.length, row=Math.floor(i/cols.length);
+    if(row>=rows.length) break;
+    positions.push([cols[col]+((i*6.3)%10)-5, 0, rows[row]+((i*9.7)%10)-5]);
+  }
+  return positions;
+}
+
+function FlyController({ active }: { active: boolean }) {
+  const { camera } = useThree();
+  const keys = useRef<Record<string,boolean>>({});
+  useEffect(()=>{
+    if(!active) return;
+    const d=(e:KeyboardEvent)=>{ keys.current[e.code]=true; };
+    const u=(e:KeyboardEvent)=>{ keys.current[e.code]=false; };
+    window.addEventListener('keydown',d); window.addEventListener('keyup',u);
+    return ()=>{ window.removeEventListener('keydown',d); window.removeEventListener('keyup',u); keys.current={}; };
+  },[active]);
+  useFrame((_,delta)=>{
+    if(!active) return;
+    const k=keys.current;
+    const spd=(k['ShiftLeft']||k['ShiftRight'])?40:20;
+    const mv=spd*Math.min(delta,0.05);
+    const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
+    const flat=new THREE.Vector3(dir.x,0,dir.z).normalize();
+    const right=new THREE.Vector3().crossVectors(flat,new THREE.Vector3(0,1,0)).normalize();
+    if(k['KeyW']||k['ArrowUp'])    camera.position.addScaledVector(flat,mv);
+    if(k['KeyS']||k['ArrowDown'])  camera.position.addScaledVector(flat,-mv);
+    if(k['KeyA']||k['ArrowLeft'])  camera.position.addScaledVector(right,-mv);
+    if(k['KeyD']||k['ArrowRight']) camera.position.addScaledVector(right,mv);
+    if(k['Space'])                 camera.position.y+=mv;
+    if(k['KeyQ'])                  camera.position.y-=mv;
+  });
+  return null;
+}
+
+// The ground is a STATIC KINEMATIC platform — it cannot be missed
+// It's 3000x3000 and 40 units TALL (y: -40 to 0), top surface at y=0
+// No character can ever fall through a 40-unit tall wall
+function Ground({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  return (
+    <RigidBody type="fixed" colliders={false} position={[0,0,0]}>
+      <CuboidCollider args={[1500, 20, 1500]} position={[0, -20, 0]} />
+      <mesh rotation={[-Math.PI/2,0,0]} receiveShadow>
+        <planeGeometry args={[3000,3000]}/>
+        <meshStandardMaterial color={t.ground} roughness={0.97} metalness={0.04}/>
+      </mesh>
+    </RigidBody>
+  );
+}
+
+// Emergency net — if character somehow goes below -5, teleport back
+function SafetyNet({ bodyRef }: { bodyRef: React.MutableRefObject<any> }) {
+  useFrame(()=>{
+    const rb = bodyRef.current;
+    if(!rb) return;
+    try {
+      const pos = rb.translation();
+      if(pos && pos.y < -5){
+        rb.setTranslation({ x: SPAWN_POS[0], y: SPAWN_POS[1], z: SPAWN_POS[2] }, true);
+        rb.setLinvel({ x:0, y:0, z:0 }, true);
+        rb.setAngvel({ x:0, y:0, z:0 }, true);
+      }
+    } catch(_){}
+  });
+  return null;
+}
+
+function CharacterController({ flyMode }: { flyMode: boolean }) {
+  const bodyRef = useRef<any>(null);
+
+  if(flyMode) return null;
+  return (
+    <>
+      <Ecctrl
+        ref={bodyRef}
+        animated={false}
+        jumpVel={8}
+        maxVelLimit={11}
+        camInitDis={-9}
+        camMinDis={-3}
+        camMaxDis={-20}
+        camInitDir={{ x:-0.12, y:0 }}
+        position={SPAWN_POS}
+        capsuleHalfHeight={0.4}
+        capsuleRadius={0.22}
+        floatHeight={0.15}
+        autoBalance={true}
+        autoBalanceSpringK={0.3}
+        autoBalanceDampingC={0.03}
+      >
+        <mesh castShadow>
+          <capsuleGeometry args={[0.22,0.44,6,12]}/>
+          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.8} roughness={0.2} metalness={0.5}/>
+        </mesh>
+      </Ecctrl>
+      <SafetyNet bodyRef={bodyRef}/>
     </>
   );
 }
 
-function buildTreePositions(): [number, number, number][] {
-  const positions: [number, number, number][] = [];
-  for (let i = 0; i < 80; i++) {
-    const angle = (i / 80) * Math.PI * 2;
-    const r = 220 + (i % 3) * 30 + (i * 7.3) % 20;
-    positions.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
-  }
-  for (let i = 0; i < 40; i++) {
-    const x = (((i * 137.508) % 340) - 170);
-    const z = (((i * 89.31) % 340) - 170);
-    if (Math.sqrt(x * x + z * z) > 80) positions.push([x, 0, z]);
-  }
-  return positions;
-}
-const TREE_POSITIONS = buildTreePositions();
-
-function buildCityLayout(count: number): [number, number, number][] {
-  const positions: [number, number, number][] = [];
-  const cols = Math.ceil(Math.sqrt(count));
-  for (let i = 0; i < count; i++) {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const offsetX = ((i * 7.3) % 8) - 4;
-    const offsetZ = ((i * 11.7) % 8) - 4;
-    const x = (col - cols / 2) * 22 + offsetX;
-    const z = (row - cols / 2) * 22 + offsetZ - 60;
-    positions.push([x, 0, z]);
-  }
-  return positions;
-}
-
-// FlyController — keyboard WASD + QE for up/down, touch-friendly
-function FlyController({ active }: { active: boolean }) {
-  const { camera } = useThree();
-  const keys = useRef<Record<string, boolean>>({});
-  const velocity = useRef(new THREE.Vector3());
-
-  useEffect(() => {
-    if (!active) return;
-    const onKeyDown = (e: KeyboardEvent) => { keys.current[e.code] = true; };
-    const onKeyUp   = (e: KeyboardEvent) => { keys.current[e.code] = false; };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [active]);
-
-  useFrame((_, delta) => {
-    if (!active) return;
-    const speed = 28;
-    const dampening = 0.88;
-    const dir = new THREE.Vector3();
-
-    if (keys.current['KeyW'] || keys.current['ArrowUp'])    dir.z -= 1;
-    if (keys.current['KeyS'] || keys.current['ArrowDown'])  dir.z += 1;
-    if (keys.current['KeyA'] || keys.current['ArrowLeft'])  dir.x -= 1;
-    if (keys.current['KeyD'] || keys.current['ArrowRight']) dir.x += 1;
-    if (keys.current['KeyQ'] || keys.current['Space'])      dir.y += 1;
-    if (keys.current['KeyE'] || keys.current['ShiftLeft'])  dir.y -= 1;
-
-    if (dir.length() > 0) {
-      dir.normalize();
-      // Move relative to camera facing direction
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0;
-      forward.normalize();
-      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
-
-      const move = new THREE.Vector3()
-        .addScaledVector(right, dir.x)
-        .addScaledVector(new THREE.Vector3(0,1,0), dir.y)
-        .addScaledVector(forward, -dir.z);
-
-      velocity.current.addScaledVector(move, speed * delta);
-    }
-
-    velocity.current.multiplyScalar(dampening);
-    camera.position.addScaledVector(velocity.current, delta);
-  });
-
-  return null;
-}
-
-// Camera zoom via scroll wheel + pinch on touch
-function CameraZoom() {
-  const { camera, gl } = useThree();
-
-  useEffect(() => {
-    const canvas = gl.domElement;
-
-    // Mouse wheel zoom
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const factor = e.deltaY > 0 ? 1.1 : 0.9;
-      // Move camera forward/back
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      camera.position.addScaledVector(dir, e.deltaY < 0 ? 3 : -3);
-    };
-
-    // Pinch zoom for touch
-    let lastPinchDist = 0;
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        lastPinchDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-      }
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        const dist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        const delta = lastPinchDist - dist;
-        lastPinchDist = dist;
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        camera.position.addScaledVector(dir, -delta * 0.15);
-      }
-    };
-
-    canvas.addEventListener('wheel', onWheel, { passive: false });
-    canvas.addEventListener('touchstart', onTouchStart, { passive: true });
-    canvas.addEventListener('touchmove', onTouchMove, { passive: true });
-    return () => {
-      canvas.removeEventListener('wheel', onWheel);
-      canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchmove', onTouchMove);
-    };
-  }, [camera, gl]);
-
-  return null;
-}
-
-function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, theme: ThemeName }) {
+function WorldScene({ devs, flyMode, theme }: { devs:any[], flyMode:boolean, theme:ThemeName }) {
   const t = THEMES[theme];
-  const cityLayout = devs ? buildCityLayout(devs.length) : [];
+  const cityLayout = useMemo(()=> devs ? buildCityLayout(devs.length) : [], [devs]);
 
   return (
     <>
-      <SceneFog theme={theme} />
-      <SunsetSky theme={theme} />
-      <CameraZoom />
-      <Stars radius={350} depth={80} count={theme === 'sunset' ? 2000 : 7000} factor={6} saturation={0.7} fade speed={0.12} />
+      <SceneFog theme={theme}/>
+      <ThemeSky theme={theme}/>
+      <Stars radius={380} depth={55} count={theme==='sunset'?1000:4500} factor={4.5} saturation={0.5} fade speed={0.08}/>
+      <CelestialBody theme={theme}/>
+      <BackgroundSkyline theme={theme}/>
+      <ambientLight intensity={0.55} color={t.ambient}/>
+      <directionalLight position={t.sunPos} intensity={theme==='sunset'?1.6:1.3} color={t.sunColor} castShadow shadow-mapSize={[1024,1024]} shadow-camera-far={600} shadow-camera-left={-220} shadow-camera-right={220} shadow-camera-top={220} shadow-camera-bottom={-220}/>
+      <pointLight position={[0,100,-100]} color={t.sunColor} intensity={220} distance={650} decay={2}/>
+      <pointLight position={[150,70,-100]} color="#2244ee" intensity={160} distance={450} decay={2}/>
+      <pointLight position={[-150,70,-100]} color="#00ccbb" intensity={160} distance={450} decay={2}/>
 
-      <Cloud position={[-80, 55, -220]} speed={0.1} opacity={0.18} color={theme === 'sunset' ? "#804020" : "#1a3060"} scale={4} />
-      <Cloud position={[130, 70, -280]} speed={0.08} opacity={0.14} color={theme === 'sunset' ? "#602010" : "#112244"} scale={3} />
-
-      <Moon theme={theme} />
-      <Fireflies />
-
-      <ambientLight intensity={0.6} color={t.ambient} />
-      <directionalLight
-        position={theme === 'sunset' ? [-200, 40, -400] : [180, 110, -350]}
-        intensity={theme === 'sunset' ? 1.8 : 1.4}
-        color={theme === 'sunset' ? "#ff8844" : "#c0d8ff"}
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-far={600}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
-      />
-      <pointLight position={[0, 3, -50]} intensity={700} color="#ff4400" distance={400} decay={2} />
-      <pointLight position={[130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ff8800" : "#2255ff"} distance={450} decay={2} />
-      <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
-
-      <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-        {/* Only render Ecctrl when NOT in fly mode */}
-        {!flyMode && (
-          <Ecctrl
-            animated={false}
-            jumpVel={8}
-            maxVelLimit={10}
-            camInitDis={-8} camMinDis={-3} camMaxDis={-15}
-            camInitDir={{ x: -0.15, y: 0 }}
-            position={[0, 4, 80]}
-          >
-            <mesh castShadow>
-              <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
-              <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
-            </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
-              <ringGeometry args={[0.28, 0.55, 16]} />
-              <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
-            </mesh>
-          </Ecctrl>
-        )}
-
-        {/* Free camera fly controller */}
-        <FlyController active={flyMode} />
-
-        {devs?.map((dev: any, i: number) => (
-          <DevBuilding
-            key={dev.username || i}
-            dev={dev}
-            position={cityLayout[i] || [i * 20, 0, 0]}
-            theme={theme}
-          />
+      <Physics gravity={[0, flyMode ? 0 : -25, 0]} timeStep="vary">
+        <Ground theme={theme}/>
+        <CharacterController flyMode={flyMode}/>
+        {devs?.map((dev:any,i:number)=>(
+          <DevBuilding key={dev.username||i} dev={dev} position={cityLayout[i]||[(i-devs.length/2)*20,0,0]} theme={theme}/>
         ))}
-
-        <RigidBody type="fixed">
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[3000, 3000]} />
-            <meshStandardMaterial color={t.ground} roughness={0.96} metalness={0.1} />
-          </mesh>
-        </RigidBody>
       </Physics>
 
-      <Grid
-        position={[0, 0.02, 0]}
-        args={[3000, 3000]}
-        cellSize={10} cellThickness={0.4} cellColor={t.grid}
-        sectionSize={50} sectionThickness={1.0} sectionColor={t.gridSection}
-        fadeDistance={500} fadeStrength={1.2} infiniteGrid
-      />
-
-      <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
-      <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
-      <WaterBody position={[0, 0, 200]} sx={40} sz={25} />
-
-      {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
+      <FlyController active={flyMode}/>
+      <Roads/>
+      <StreetLamps/>
+      <Grid position={[0,0.02,0]} args={[3000,3000]} cellSize={10} cellThickness={0.3} cellColor={t.grid} sectionSize={60} sectionThickness={0.7} sectionColor={t.gridSection} fadeDistance={500} fadeStrength={1.0} infiniteGrid/>
+      {PARK_TREES.map((pos,i)=><Tree key={i} position={pos} s={0.75}/>)}
     </>
   );
 }
 
-function ActivityFeed({ devs }: { devs: any[] }) {
-  const items = devs?.slice(0, 20).map(d =>
-    `⬡ ${d.username} · ${d.contributions} commits · ${d.repos} repos`
-  ) || [];
-  const doubled = [...items, ...items];
-
+function ActivityFeed({ devs }: { devs:any[] }) {
+  const items = devs?.slice(0,30).map(d=>`⬡ ${d.username}  ★ ${d.contributions} commits  ◎ ${d.repos} repos`) || [];
+  const doubled = [...items,...items];
   return (
-    <div style={{
-      position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
-      height: 28, background: 'rgba(0,0,0,0.7)',
-      borderTop: '1px solid rgba(255,255,255,0.06)',
-      overflow: 'hidden', display: 'flex', alignItems: 'center',
-    }}>
-      <div style={{
-        display: 'flex', gap: 60, whiteSpace: 'nowrap',
-        animation: 'ticker 40s linear infinite',
-        fontSize: 10, color: '#22c55e', fontFamily: 'monospace', letterSpacing: 1,
-      }}>
-        {doubled.map((item, i) => <span key={i}>{item}</span>)}
+    <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:50, height:26, background:'rgba(0,0,0,0.88)', borderTop:'1px solid rgba(255,255,255,0.05)', overflow:'hidden', display:'flex', alignItems:'center' }}>
+      <div style={{ display:'flex', gap:80, whiteSpace:'nowrap', animation:'ticker 60s linear infinite', fontSize:9, color:'#22c55e', fontFamily:'monospace', letterSpacing:1.5 }}>
+        {doubled.map((item,i)=><span key={i}>{item}</span>)}
       </div>
-      <style>{`
-        @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-      `}</style>
+      <style>{`@keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-50%)}}`}</style>
     </div>
   );
 }
 
 export default function WorldClient({ username }: { username: string }) {
   const [mounted, setMounted] = useState(false);
-  // physicsReady delays rendering until after a short settle time
-  const [physicsReady, setPhysicsReady] = useState(false);
-  const { data: devs } = useSWR('/api/city', fetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 60000, // don't re-fetch more than once per minute
-  });
+  const { data: devs } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
   const { progress } = useProgress();
-  const [players, setPlayers] = useState<Record<string, any>>({});
+  const [players, setPlayers] = useState<Record<string,any>>({});
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
+  // Wait 2 full seconds before showing scene — gives Rapier ground collider time to exist
+  const [physicsReady, setPhysicsReady] = useState(false);
   const room = useRef<any>(null);
 
-  useEffect(() => {
+  useEffect(()=>{
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    const t = setTimeout(()=> setPhysicsReady(true), 2000);
+    try {
+      room.current = supabase.channel('presence')
+        .on('broadcast',{ event:'move' },({ payload }:any)=>{
+          if(payload?.username) setPlayers(p=>({...p,[payload.username]:payload}));
+        }).subscribe();
+    } catch(e){ console.error(e); }
+    return ()=>{ room.current?.unsubscribe(); clearTimeout(t); };
+  },[]);
 
-    // Give physics engine time to settle BEFORE enabling joystick/input
-    // This prevents the capsule from falling through the world
-    const timer = setTimeout(() => setPhysicsReady(true), 1800);
-
-    if (typeof window !== 'undefined') {
-      try {
-        room.current = supabase.channel('presence')
-          .on('broadcast', { event: 'move' }, ({ payload }: any) => {
-            if (payload?.username) setPlayers(p => ({ ...p, [payload.username]: payload }));
-          }).subscribe();
-      } catch (e) { console.error(e); }
-    }
-    return () => {
-      clearTimeout(timer);
-      room.current?.unsubscribe();
-    };
-  }, []);
-
-  const isDataReady = mounted && devs;
-  const showJoystick = isTouch && physicsReady && !flyMode;
-
-  // Fly mode toggle — also resets camera to a good position
-  const handleFlyToggle = useCallback(() => {
-    setFlyMode(f => !f);
-  }, []);
+  const dataReady = mounted && devs && Array.isArray(devs);
+  // Scene is shown only after BOTH data loaded AND physics warmup done
+  const showWorld = dataReady && physicsReady;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
-      {!isDataReady && <LoadingScreen progress={progress || 10} />}
-      {isDataReady && (
+    <div style={{ position:'fixed', inset:0, background:'#1a0800', overflow:'hidden' }}>
+      {!showWorld && <LoadingScreen progress={physicsReady ? (progress||10) : Math.min(progress||5, 75)}/>}
+
+      {dataReady && (
+        <ErrorBoundary>
+          <Canvas
+            shadows
+            gl={{ antialias:true, alpha:false, toneMapping:THREE.ACESFilmicToneMapping, toneMappingExposure:1.2, powerPreference:"high-performance" }}
+            camera={{ fov:65, position:[0,10,115], near:0.2, far:1600 }}
+            style={{ position:'absolute', inset:0, visibility: showWorld ? 'visible' : 'hidden' }}
+            onCreated={({ gl })=>{ gl.setClearColor(new THREE.Color('#1a0800')); }}
+          >
+            <Suspense fallback={null}>
+              <WorldScene devs={devs} flyMode={flyMode} theme={theme}/>
+            </Suspense>
+          </Canvas>
+        </ErrorBoundary>
+      )}
+
+      {showWorld && (
         <>
-          <ErrorBoundary>
-            <Canvas
-              shadows
-              gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
-              camera={{ fov: 65, position: [0, 8, 120], near: 0.1, far: 2000 }}
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-            >
-              <Suspense fallback={null}>
-                <WorldScene devs={devs} flyMode={flyMode} theme={theme} />
-              </Suspense>
-            </Canvas>
-          </ErrorBoundary>
-
-          <HUD
-            username={username}
-            playersCount={Object.keys(players).length + 1}
-            flyMode={flyMode}
-            setFlyMode={handleFlyToggle}
-            devs={devs}
-            theme={theme}
-            setTheme={setTheme}
-          />
-          <Chat username={username} />
-          <ActivityFeed devs={devs} />
-
-          {/* Fly mode touch controls overlay */}
-          {isTouch && flyMode && (
-            <div style={{
-              position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
-              zIndex: 40, display: 'flex', gap: 12,
-            }}>
-              {[
-                { label: '↑', code: 'ArrowUp' },
-                { label: '↓', code: 'ArrowDown' },
-                { label: '←', code: 'ArrowLeft' },
-                { label: '→', code: 'ArrowRight' },
-                { label: '▲ UP', code: 'Space' },
-                { label: '▼ DN', code: 'ShiftLeft' },
-              ].map(({ label, code }) => (
-                <button
-                  key={code}
-                  onPointerDown={() => { window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true })); }}
-                  onPointerUp={() => { window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); }}
-                  onPointerLeave={() => { window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); }}
-                  style={{
-                    width: 52, height: 52, borderRadius: 10,
-                    background: 'rgba(59,130,246,0.25)',
-                    border: '1px solid rgba(59,130,246,0.5)',
-                    color: '#3b82f6', fontSize: 11, fontFamily: 'monospace',
-                    fontWeight: 700, cursor: 'pointer', userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+          <HUD username={username} playersCount={Object.keys(players).length+1} flyMode={flyMode} setFlyMode={setFlyMode} devs={devs} theme={theme} setTheme={setTheme}/>
+          <Chat username={username}/>
+          <ActivityFeed devs={devs}/>
+          {isTouch && !flyMode && (
+            <div style={{ position:'fixed', bottom:'34px', left:'8px', zIndex:40, transform:'scale(0.52)', transformOrigin:'bottom left', opacity:0.85, pointerEvents:'auto' }}>
+              <EcctrlJoystick/>
             </div>
           )}
-
-          {/* Walk joystick — only shown after physics is ready */}
-          {showJoystick && (
-            <div style={{
-              position: 'fixed', bottom: '36px', left: '8px', zIndex: 40,
-              transform: 'scale(0.58)', transformOrigin: 'bottom left',
-              opacity: 0.78, pointerEvents: 'auto',
-            }}>
-              <EcctrlJoystick />
+          {flyMode && (
+            <div style={{ position:'fixed', bottom:36, left:'50%', transform:'translateX(-50%)', pointerEvents:'none', zIndex:45, fontFamily:'monospace', fontSize:9, color:'rgba(59,130,246,0.9)', letterSpacing:2, background:'rgba(0,0,0,0.55)', padding:'6px 14px', borderRadius:8 }}>
+              {isTouch ? 'JOYSTICK=MOVE · PINCH=HEIGHT' : 'WASD=MOVE · SPACE=UP · Q=DOWN · SHIFT=BOOST'}
             </div>
           )}
         </>
