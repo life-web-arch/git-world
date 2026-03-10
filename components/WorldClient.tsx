@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody, CuboidCollider } from "@react-three/rapier";
-import { Stars, Grid, useProgress } from "@react-three/drei";
+import { Stars, Grid, useProgress, PerspectiveCamera } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import { useEffect, useState, useRef, Suspense, useMemo } from "react";
 import useSWR from "swr";
@@ -24,7 +24,10 @@ export const THEMES = {
 };
 export type ThemeName = keyof typeof THEMES;
 
-const SPAWN: [number,number,number] = [0, 6, 115];
+// Spawn on top of a solid platform at y=20, platform sits on ground
+// Character starts at y=22 (above platform), lands safely even if ground glitches
+const PLATFORM_Y = 0;
+const SPAWN_POS: [number,number,number] = [0, 22, 115];
 
 function SceneFog({ theme }: { theme: ThemeName }) {
   const { scene } = useThree();
@@ -55,14 +58,14 @@ function ThemeSky({ theme }: { theme: ThemeName }) {
 
 function CelestialBody({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
-  const isSunset = theme === 'sunset';
+  const big = theme === 'sunset';
   return (
     <group position={t.sunPos}>
       <mesh>
-        <sphereGeometry args={[isSunset ? 18 : 9, 24, 24]} />
-        <meshStandardMaterial color={t.sunColor} emissive={t.sunColor} emissiveIntensity={isSunset ? 1.0 : 0.7} roughness={1} />
+        <sphereGeometry args={[big ? 18 : 9, 24, 24]} />
+        <meshStandardMaterial color={t.sunColor} emissive={t.sunColor} emissiveIntensity={big ? 1.0 : 0.7} roughness={1} />
       </mesh>
-      <pointLight color={t.sunColor} intensity={isSunset ? 700 : 500} distance={2000} decay={2} />
+      <pointLight color={t.sunColor} intensity={big ? 700 : 500} distance={2000} decay={2} />
     </group>
   );
 }
@@ -75,22 +78,10 @@ function Tree({ position, s=1 }: { position:[number,number,number], s?:number })
   const g = `hsl(${hue},48%,14%)`;
   return (
     <group position={position}>
-      <mesh position={[0,th/2,0]}>
-        <cylinderGeometry args={[0.10,0.16,th,6]}/>
-        <meshStandardMaterial color="#160b04" roughness={1}/>
-      </mesh>
-      <mesh position={[0,th+cr*0.5,0]}>
-        <coneGeometry args={[cr,cr*1.6,7]}/>
-        <meshStandardMaterial color={g} roughness={0.85} emissive={g} emissiveIntensity={0.06}/>
-      </mesh>
-      <mesh position={[0,th+cr*1.1,0]}>
-        <coneGeometry args={[cr*0.65,cr*1.2,7]}/>
-        <meshStandardMaterial color={g} roughness={0.85}/>
-      </mesh>
-      <mesh position={[0,th+cr*1.65,0]}>
-        <coneGeometry args={[cr*0.35,cr*0.8,7]}/>
-        <meshStandardMaterial color={g} roughness={0.85}/>
-      </mesh>
+      <mesh position={[0,th/2,0]}><cylinderGeometry args={[0.10,0.16,th,6]}/><meshStandardMaterial color="#160b04" roughness={1}/></mesh>
+      <mesh position={[0,th+cr*0.5,0]}><coneGeometry args={[cr,cr*1.6,7]}/><meshStandardMaterial color={g} roughness={0.85} emissive={g} emissiveIntensity={0.06}/></mesh>
+      <mesh position={[0,th+cr*1.1,0]}><coneGeometry args={[cr*0.65,cr*1.2,7]}/><meshStandardMaterial color={g} roughness={0.85}/></mesh>
+      <mesh position={[0,th+cr*1.65,0]}><coneGeometry args={[cr*0.35,cr*0.8,7]}/><meshStandardMaterial color={g} roughness={0.85}/></mesh>
     </group>
   );
 }
@@ -100,14 +91,12 @@ function Roads() {
     <group position={[0,0.015,0]}>
       {([-75,-15,45] as number[]).map(x=>(
         <mesh key={`v${x}`} rotation={[-Math.PI/2,0,0]} position={[x,0,0]}>
-          <planeGeometry args={[9,800]}/>
-          <meshStandardMaterial color="#070707" roughness={0.98}/>
+          <planeGeometry args={[9,800]}/><meshStandardMaterial color="#070707" roughness={0.98}/>
         </mesh>
       ))}
       {([-110,-50,10,70,130] as number[]).map(z=>(
         <mesh key={`h${z}`} rotation={[-Math.PI/2,0,0]} position={[0,0,z]}>
-          <planeGeometry args={[800,9]}/>
-          <meshStandardMaterial color="#070707" roughness={0.98}/>
+          <planeGeometry args={[800,9]}/><meshStandardMaterial color="#070707" roughness={0.98}/>
         </mesh>
       ))}
     </group>
@@ -116,21 +105,13 @@ function Roads() {
 
 function StreetLamps() {
   const spots: [number,number,number][] = [];
-  [-75,-15,45].forEach(x => {
-    for(let z=-180;z<=180;z+=35) spots.push([x+6,0,z]);
-  });
+  [-75,-15,45].forEach(x => { for(let z=-180;z<=180;z+=35) spots.push([x+6,0,z]); });
   return (
     <group>
       {spots.map((pos,i)=>(
         <group key={i} position={pos}>
-          <mesh position={[0,3.5,0]}>
-            <cylinderGeometry args={[0.06,0.09,7,5]}/>
-            <meshStandardMaterial color="#151515" roughness={0.9}/>
-          </mesh>
-          <mesh position={[0,7.2,0]}>
-            <sphereGeometry args={[0.28,8,8]}/>
-            <meshStandardMaterial color="#ffdd66" emissive="#ffdd66" emissiveIntensity={4}/>
-          </mesh>
+          <mesh position={[0,3.5,0]}><cylinderGeometry args={[0.06,0.09,7,5]}/><meshStandardMaterial color="#151515" roughness={0.9}/></mesh>
+          <mesh position={[0,7.2,0]}><sphereGeometry args={[0.28,8,8]}/><meshStandardMaterial color="#ffdd66" emissive="#ffdd66" emissiveIntensity={4}/></mesh>
           <pointLight position={[0,7,0]} color="#ffcc44" intensity={16} distance={26} decay={2}/>
         </group>
       ))}
@@ -142,9 +123,7 @@ function BackgroundSkyline({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
   const buildings = useMemo(()=>{
     const r=[];
-    for(let i=0;i<55;i++){
-      r.push({ x:((i*53.7)%700)-350, z:-300-Math.floor(i/14)*50, h:25+(i*19.3%55), w:9+(i*7.1%12), key:i });
-    }
+    for(let i=0;i<55;i++) r.push({ x:((i*53.7)%700)-350, z:-300-Math.floor(i/14)*50, h:25+(i*19.3%55), w:9+(i*7.1%12), key:i });
     return r;
   },[]);
   return (
@@ -179,7 +158,6 @@ function buildCityLayout(count:number):[number,number,number][]{
   return positions;
 }
 
-// Fly controller
 function FlyController({ active }: { active: boolean }) {
   const { camera } = useThree();
   const keys = useRef<Record<string,boolean>>({});
@@ -187,36 +165,36 @@ function FlyController({ active }: { active: boolean }) {
     if(!active) return;
     const d=(e:KeyboardEvent)=>{ keys.current[e.code]=true; };
     const u=(e:KeyboardEvent)=>{ keys.current[e.code]=false; };
-    window.addEventListener('keydown',d);
-    window.addEventListener('keyup',u);
+    window.addEventListener('keydown',d); window.addEventListener('keyup',u);
     return ()=>{ window.removeEventListener('keydown',d); window.removeEventListener('keyup',u); keys.current={}; };
   },[active]);
   useFrame((_,delta)=>{
     if(!active) return;
     const k=keys.current;
     const spd=(k['ShiftLeft']||k['ShiftRight'])?40:20;
-    const d=spd*Math.min(delta,0.05);
+    const mv=spd*Math.min(delta,0.05);
     const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
     const flat=new THREE.Vector3(dir.x,0,dir.z).normalize();
     const right=new THREE.Vector3().crossVectors(flat,new THREE.Vector3(0,1,0)).normalize();
-    if(k['KeyW']||k['ArrowUp'])    camera.position.addScaledVector(flat,d);
-    if(k['KeyS']||k['ArrowDown'])  camera.position.addScaledVector(flat,-d);
-    if(k['KeyA']||k['ArrowLeft'])  camera.position.addScaledVector(right,-d);
-    if(k['KeyD']||k['ArrowRight']) camera.position.addScaledVector(right,d);
-    if(k['Space'])                 camera.position.y+=d;
-    if(k['KeyQ'])                  camera.position.y-=d;
+    if(k['KeyW']||k['ArrowUp'])    camera.position.addScaledVector(flat,mv);
+    if(k['KeyS']||k['ArrowDown'])  camera.position.addScaledVector(flat,-mv);
+    if(k['KeyA']||k['ArrowLeft'])  camera.position.addScaledVector(right,-mv);
+    if(k['KeyD']||k['ArrowRight']) camera.position.addScaledVector(right,mv);
+    if(k['Space'])                 camera.position.y+=mv;
+    if(k['KeyQ'])                  camera.position.y-=mv;
   });
   return null;
 }
 
-// Solid ground using only CuboidCollider — guaranteed no tunneling
+// The ground is a STATIC KINEMATIC platform — it cannot be missed
+// It's 3000x3000 and 40 units TALL (y: -40 to 0), top surface at y=0
+// No character can ever fall through a 40-unit tall wall
 function Ground({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
   return (
-    <RigidBody type="fixed" colliders={false}>
-      {/* Thick slab: 3000 wide, 20 units tall, top surface at y=0 */}
-      <CuboidCollider args={[1500, 10, 1500]} position={[0, -10, 0]} />
-      <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
+    <RigidBody type="fixed" colliders={false} position={[0,0,0]}>
+      <CuboidCollider args={[1500, 20, 1500]} position={[0, -20, 0]} />
+      <mesh rotation={[-Math.PI/2,0,0]} receiveShadow>
         <planeGeometry args={[3000,3000]}/>
         <meshStandardMaterial color={t.ground} roughness={0.97} metalness={0.04}/>
       </mesh>
@@ -224,24 +202,57 @@ function Ground({ theme }: { theme: ThemeName }) {
   );
 }
 
-// Watches character Y position and respawns if fallen below -8
-function FallGuard({ ecctrlRef }: { ecctrlRef: React.MutableRefObject<any> }) {
+// Emergency net — if character somehow goes below -5, teleport back
+function SafetyNet({ bodyRef }: { bodyRef: React.MutableRefObject<any> }) {
   useFrame(()=>{
-    if(!ecctrlRef.current) return;
-    const rb = ecctrlRef.current?.characterRef?.current;
-    if(rb){
+    const rb = bodyRef.current;
+    if(!rb) return;
+    try {
       const pos = rb.translation();
-      if(pos.y < -8){
-        rb.setTranslation({ x: SPAWN[0], y: SPAWN[1], z: SPAWN[2] }, true);
+      if(pos && pos.y < -5){
+        rb.setTranslation({ x: SPAWN_POS[0], y: SPAWN_POS[1], z: SPAWN_POS[2] }, true);
         rb.setLinvel({ x:0, y:0, z:0 }, true);
         rb.setAngvel({ x:0, y:0, z:0 }, true);
       }
-    }
+    } catch(_){}
   });
   return null;
 }
 
-function WorldScene({ devs, flyMode, theme, ecctrlRef }: { devs:any[], flyMode:boolean, theme:ThemeName, ecctrlRef:React.MutableRefObject<any> }) {
+function CharacterController({ flyMode }: { flyMode: boolean }) {
+  const bodyRef = useRef<any>(null);
+
+  if(flyMode) return null;
+  return (
+    <>
+      <Ecctrl
+        ref={bodyRef}
+        animated={false}
+        jumpVel={8}
+        maxVelLimit={11}
+        camInitDis={-9}
+        camMinDis={-3}
+        camMaxDis={-20}
+        camInitDir={{ x:-0.12, y:0 }}
+        position={SPAWN_POS}
+        capsuleHalfHeight={0.4}
+        capsuleRadius={0.22}
+        floatHeight={0.15}
+        autoBalance={true}
+        autoBalanceSpringK={0.3}
+        autoBalanceDampingC={0.03}
+      >
+        <mesh castShadow>
+          <capsuleGeometry args={[0.22,0.44,6,12]}/>
+          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.8} roughness={0.2} metalness={0.5}/>
+        </mesh>
+      </Ecctrl>
+      <SafetyNet bodyRef={bodyRef}/>
+    </>
+  );
+}
+
+function WorldScene({ devs, flyMode, theme }: { devs:any[], flyMode:boolean, theme:ThemeName }) {
   const t = THEMES[theme];
   const cityLayout = useMemo(()=> devs ? buildCityLayout(devs.length) : [], [devs]);
 
@@ -252,73 +263,24 @@ function WorldScene({ devs, flyMode, theme, ecctrlRef }: { devs:any[], flyMode:b
       <Stars radius={380} depth={55} count={theme==='sunset'?1000:4500} factor={4.5} saturation={0.5} fade speed={0.08}/>
       <CelestialBody theme={theme}/>
       <BackgroundSkyline theme={theme}/>
-
       <ambientLight intensity={0.55} color={t.ambient}/>
-      <directionalLight
-        position={t.sunPos}
-        intensity={theme==='sunset'?1.6:1.3}
-        color={t.sunColor}
-        castShadow
-        shadow-mapSize={[1024,1024]}
-        shadow-camera-far={600}
-        shadow-camera-left={-220} shadow-camera-right={220}
-        shadow-camera-top={220} shadow-camera-bottom={-220}
-      />
+      <directionalLight position={t.sunPos} intensity={theme==='sunset'?1.6:1.3} color={t.sunColor} castShadow shadow-mapSize={[1024,1024]} shadow-camera-far={600} shadow-camera-left={-220} shadow-camera-right={220} shadow-camera-top={220} shadow-camera-bottom={-220}/>
       <pointLight position={[0,100,-100]} color={t.sunColor} intensity={220} distance={650} decay={2}/>
       <pointLight position={[150,70,-100]} color="#2244ee" intensity={160} distance={450} decay={2}/>
       <pointLight position={[-150,70,-100]} color="#00ccbb" intensity={160} distance={450} decay={2}/>
 
       <Physics gravity={[0, flyMode ? 0 : -25, 0]} timeStep="vary">
-        {/* Ground FIRST — must be first child so collider exists before character */}
         <Ground theme={theme}/>
-
-        {!flyMode && (
-          <>
-            <Ecctrl
-              ref={ecctrlRef}
-              animated={false}
-              jumpVel={8}
-              maxVelLimit={11}
-              camInitDis={-9}
-              camMinDis={-3}
-              camMaxDis={-20}
-              camInitDir={{ x:-0.12, y:0 }}
-              position={SPAWN}
-              capsuleHalfHeight={0.4}
-              capsuleRadius={0.22}
-              floatHeight={0.15}
-              autoBalance={true}
-              autoBalanceSpringK={0.3}
-              autoBalanceDampingC={0.03}
-            >
-              <mesh castShadow>
-                <capsuleGeometry args={[0.22,0.44,6,12]}/>
-                <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.8} roughness={0.2} metalness={0.5}/>
-              </mesh>
-            </Ecctrl>
-            <FallGuard ecctrlRef={ecctrlRef}/>
-          </>
-        )}
-
+        <CharacterController flyMode={flyMode}/>
         {devs?.map((dev:any,i:number)=>(
-          <DevBuilding
-            key={dev.username||i}
-            dev={dev}
-            position={cityLayout[i]||[(i-devs.length/2)*20,0,0]}
-            theme={theme}
-          />
+          <DevBuilding key={dev.username||i} dev={dev} position={cityLayout[i]||[(i-devs.length/2)*20,0,0]} theme={theme}/>
         ))}
       </Physics>
 
       <FlyController active={flyMode}/>
       <Roads/>
       <StreetLamps/>
-      <Grid
-        position={[0,0.02,0]} args={[3000,3000]}
-        cellSize={10} cellThickness={0.3} cellColor={t.grid}
-        sectionSize={60} sectionThickness={0.7} sectionColor={t.gridSection}
-        fadeDistance={500} fadeStrength={1.0} infiniteGrid
-      />
+      <Grid position={[0,0.02,0]} args={[3000,3000]} cellSize={10} cellThickness={0.3} cellColor={t.grid} sectionSize={60} sectionThickness={0.7} sectionColor={t.gridSection} fadeDistance={500} fadeStrength={1.0} infiniteGrid/>
       {PARK_TREES.map((pos,i)=><Tree key={i} position={pos} s={0.75}/>)}
     </>
   );
@@ -345,15 +307,14 @@ export default function WorldClient({ username }: { username: string }) {
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
-  const [sceneReady, setSceneReady] = useState(false);
+  // Wait 2 full seconds before showing scene — gives Rapier ground collider time to exist
+  const [physicsReady, setPhysicsReady] = useState(false);
   const room = useRef<any>(null);
-  const ecctrlRef = useRef<any>(null);
 
   useEffect(()=>{
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    // Wait 1.2s for Rapier to fully init ground collider before revealing scene
-    const t = setTimeout(()=> setSceneReady(true), 1200);
+    const t = setTimeout(()=> setPhysicsReady(true), 2000);
     try {
       room.current = supabase.channel('presence')
         .on('broadcast',{ event:'move' },({ payload }:any)=>{
@@ -364,38 +325,24 @@ export default function WorldClient({ username }: { username: string }) {
   },[]);
 
   const dataReady = mounted && devs && Array.isArray(devs);
-  const showWorld = dataReady && sceneReady;
+  // Scene is shown only after BOTH data loaded AND physics warmup done
+  const showWorld = dataReady && physicsReady;
 
   return (
     <div style={{ position:'fixed', inset:0, background:'#1a0800', overflow:'hidden' }}>
-      {/* Loading screen — shown until both data AND physics are ready */}
-      {!showWorld && (
-        <LoadingScreen progress={sceneReady ? (progress||10) : Math.min(progress||5, 80)}/>
-      )}
+      {!showWorld && <LoadingScreen progress={physicsReady ? (progress||10) : Math.min(progress||5, 75)}/>}
 
-      {/* Canvas always mounted — physics warms up invisibly */}
       {dataReady && (
         <ErrorBoundary>
           <Canvas
             shadows
-            gl={{
-              antialias: true,
-              alpha: false,
-              toneMapping: THREE.ACESFilmicToneMapping,
-              toneMappingExposure: 1.2,
-              powerPreference: "high-performance",
-            }}
+            gl={{ antialias:true, alpha:false, toneMapping:THREE.ACESFilmicToneMapping, toneMappingExposure:1.2, powerPreference:"high-performance" }}
             camera={{ fov:65, position:[0,10,115], near:0.2, far:1600 }}
             style={{ position:'absolute', inset:0, visibility: showWorld ? 'visible' : 'hidden' }}
             onCreated={({ gl })=>{ gl.setClearColor(new THREE.Color('#1a0800')); }}
           >
             <Suspense fallback={null}>
-              <WorldScene
-                devs={devs}
-                flyMode={flyMode}
-                theme={theme}
-                ecctrlRef={ecctrlRef}
-              />
+              <WorldScene devs={devs} flyMode={flyMode} theme={theme}/>
             </Suspense>
           </Canvas>
         </ErrorBoundary>
@@ -403,33 +350,16 @@ export default function WorldClient({ username }: { username: string }) {
 
       {showWorld && (
         <>
-          <HUD
-            username={username}
-            playersCount={Object.keys(players).length+1}
-            flyMode={flyMode} setFlyMode={setFlyMode}
-            devs={devs} theme={theme} setTheme={setTheme}
-          />
+          <HUD username={username} playersCount={Object.keys(players).length+1} flyMode={flyMode} setFlyMode={setFlyMode} devs={devs} theme={theme} setTheme={setTheme}/>
           <Chat username={username}/>
           <ActivityFeed devs={devs}/>
-
           {isTouch && !flyMode && (
-            <div style={{
-              position:'fixed', bottom:'34px', left:'8px', zIndex:40,
-              transform:'scale(0.52)', transformOrigin:'bottom left',
-              opacity:0.85, pointerEvents:'auto',
-            }}>
+            <div style={{ position:'fixed', bottom:'34px', left:'8px', zIndex:40, transform:'scale(0.52)', transformOrigin:'bottom left', opacity:0.85, pointerEvents:'auto' }}>
               <EcctrlJoystick/>
             </div>
           )}
-
           {flyMode && (
-            <div style={{
-              position:'fixed', bottom:36, left:'50%', transform:'translateX(-50%)',
-              pointerEvents:'none', zIndex:45,
-              fontFamily:'monospace', fontSize:9, color:'rgba(59,130,246,0.9)',
-              letterSpacing:2, background:'rgba(0,0,0,0.55)',
-              padding:'6px 14px', borderRadius:8,
-            }}>
+            <div style={{ position:'fixed', bottom:36, left:'50%', transform:'translateX(-50%)', pointerEvents:'none', zIndex:45, fontFamily:'monospace', fontSize:9, color:'rgba(59,130,246,0.9)', letterSpacing:2, background:'rgba(0,0,0,0.55)', padding:'6px 14px', borderRadius:8 }}>
               {isTouch ? 'JOYSTICK=MOVE · PINCH=HEIGHT' : 'WASD=MOVE · SPACE=UP · Q=DOWN · SHIFT=BOOST'}
             </div>
           )}
