@@ -29,111 +29,98 @@ function getLevel(contributions: number, repos: number) {
 
 function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: () => void }) {
   const { level, title, xp } = getLevel(dev.contributions || 0, dev.repos || 0);
-  const nextXp = [100,300,800,2000,5000,10000,20000,50000,100000,999999][level - 1];
+  const XP_THRESHOLDS = [100,300,800,2000,5000,10000,20000,50000,100000,999999];
+  const nextXp = XP_THRESHOLDS[Math.min(level - 1, XP_THRESHOLDS.length - 1)];
   const progress = Math.min(100, (xp / nextXp) * 100);
 
   return (
     <div style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
-      background: '#0a0d14',
+      background: '#080b14',
       borderTop: `2px solid ${hex}`,
       borderRadius: '20px 20px 0 0',
-      padding: '20px 20px 32px',
+      padding: '20px 20px 40px',
       fontFamily: 'monospace',
-      boxShadow: `0 -8px 40px ${hex}44`,
-      animation: 'slideUp 0.3s ease-out',
+      boxShadow: `0 -12px 60px ${hex}55`,
+      animation: 'slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      maxHeight: '75vh',
+      overflowY: 'auto',
     }}>
       <style>{`
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style>
 
-      {/* Close bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ width: 40, height: 4, background: '#333', borderRadius: 2, margin: '0 auto' }} />
-        <button onClick={onClose} style={{
-          position: 'absolute', right: 16, top: 16,
-          background: 'none', border: 'none', color: '#555', fontSize: 20, cursor: 'pointer'
-        }}>✕</button>
-      </div>
+      <button onClick={onClose} style={{
+        position: 'absolute', right: 16, top: 16,
+        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+        color: '#888', fontSize: 14, cursor: 'pointer', borderRadius: 8,
+        width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>✕</button>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-        {dev.avatar_url && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+        {dev.avatar_url ? (
           <img src={dev.avatar_url} alt={dev.username} style={{
-            width: 56, height: 56, borderRadius: '50%',
-            border: `2px solid ${hex}`, boxShadow: `0 0 16px ${hex}88`
+            width: 60, height: 60, borderRadius: '50%',
+            border: `2px solid ${hex}`, boxShadow: `0 0 20px ${hex}88`,
+            flexShrink: 0,
           }} />
+        ) : (
+          <div style={{ width: 60, height: 60, borderRadius: '50%', background: hex, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: '#000', flexShrink: 0 }}>
+            {(dev.username || '?').slice(0,2).toUpperCase()}
+          </div>
         )}
         <div>
-          <div style={{ color: '#fff', fontSize: 18, fontWeight: 900, letterSpacing: 1 }}>
-            {dev.username?.toUpperCase()}
-          </div>
-          <div style={{ color: hex, fontSize: 11, letterSpacing: 3, marginTop: 2 }}>
-            @{dev.username}
-          </div>
+          <div style={{ color: '#fff', fontSize: 17, fontWeight: 900, letterSpacing: 0.5 }}>{dev.username}</div>
+          <div style={{ color: hex, fontSize: 10, letterSpacing: 3, marginTop: 3, textTransform: 'uppercase' }}>@{dev.username}</div>
         </div>
       </div>
 
-      {/* Level bar */}
-      <div style={{
-        background: '#111827', borderRadius: 10, padding: '10px 14px',
-        border: `1px solid ${hex}44`, marginBottom: 14
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ color: hex, fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>
-            LV {level} · {title}
-          </span>
-          <span style={{ color: '#555', fontSize: 10 }}>{xp.toLocaleString()} XP</span>
+      <div style={{ background: '#0f1520', borderRadius: 12, padding: '12px 14px', border: `1px solid ${hex}33`, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div>
+            <span style={{ color: hex, fontSize: 13, fontWeight: 700, letterSpacing: 2 }}>LV {level}</span>
+            <span style={{ color: '#555', fontSize: 10, marginLeft: 8, letterSpacing: 2 }}>{title}</span>
+          </div>
+          <span style={{ color: '#444', fontSize: 9 }}>{xp.toLocaleString()} XP</span>
         </div>
-        <div style={{ background: '#1f2937', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+        <div style={{ background: '#1a2235', borderRadius: 4, height: 7, overflow: 'hidden' }}>
           <div style={{
             width: `${progress}%`, height: '100%',
-            background: `linear-gradient(90deg, ${hex}, ${hex}aa)`,
-            boxShadow: `0 0 8px ${hex}`,
-            transition: 'width 1s ease',
+            background: `linear-gradient(90deg, ${hex}cc, ${hex})`,
+            boxShadow: `0 0 10px ${hex}`,
+            transition: 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }} />
         </div>
       </div>
 
-      {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
         {[
-          { label: 'COMMITS', value: (dev.contributions || 0).toLocaleString() },
-          { label: 'REPOS', value: (dev.repos || 0).toLocaleString() },
-          { label: 'FOLLOWERS', value: (dev.followers || 0).toLocaleString() },
-        ].map(({ label, value }) => (
+          { label: 'COMMITS', value: (dev.contributions||0).toLocaleString(), icon: '★' },
+          { label: 'REPOS', value: (dev.repos||0).toLocaleString(), icon: '⬡' },
+          { label: 'FOLLOWERS', value: (dev.followers||0).toLocaleString(), icon: '◎' },
+        ].map(({ label, value, icon }) => (
           <div key={label} style={{
-            background: '#111827', borderRadius: 8, padding: '10px 8px', textAlign: 'center',
-            border: '1px solid #1f2937'
+            background: '#0f1520', borderRadius: 10, padding: '12px 8px', textAlign: 'center',
+            border: '1px solid #1a2235',
           }}>
-            <div style={{ color: hex, fontSize: 15, fontWeight: 900 }}>{value}</div>
-            <div style={{ color: '#444', fontSize: 8, letterSpacing: 2, marginTop: 3 }}>{label}</div>
+            <div style={{ color: '#444', fontSize: 14, marginBottom: 4 }}>{icon}</div>
+            <div style={{ color: hex, fontSize: 14, fontWeight: 900 }}>{value}</div>
+            <div style={{ color: '#333', fontSize: 8, letterSpacing: 2, marginTop: 3 }}>{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Actions */}
       <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          onClick={() => window.open(`https://github.com/${dev.username}`, '_blank')}
-          style={{
-            flex: 1, padding: '12px', background: hex, color: '#000',
-            border: 'none', borderRadius: 8, fontFamily: 'monospace',
-            fontSize: 11, fontWeight: 900, letterSpacing: 2, cursor: 'pointer',
-          }}
-        >
-          VIEW GITHUB →
-        </button>
-        <button
-          onClick={onClose}
-          style={{
-            flex: 1, padding: '12px', background: 'transparent',
-            border: `1px solid ${hex}44`, color: '#666', borderRadius: 8,
-            fontFamily: 'monospace', fontSize: 11, letterSpacing: 2, cursor: 'pointer',
-          }}
-        >
-          CLOSE
-        </button>
+        <button onClick={() => window.open(`https://github.com/${dev.username}`, '_blank')} style={{
+          flex: 1, padding: '13px', background: hex, color: '#000',
+          border: 'none', borderRadius: 10, fontFamily: 'monospace',
+          fontSize: 11, fontWeight: 900, letterSpacing: 2, cursor: 'pointer',
+        }}>VIEW GITHUB →</button>
+        <button onClick={onClose} style={{
+          flex: 1, padding: '13px', background: 'transparent',
+          border: `1px solid ${hex}33`, color: '#555', borderRadius: 10,
+          fontFamily: 'monospace', fontSize: 11, letterSpacing: 2, cursor: 'pointer',
+        }}>CLOSE</button>
       </div>
     </div>
   );
@@ -142,64 +129,72 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
 function AnimatedBeacon({ height, color }: { height: number; color: THREE.Color }) {
   const ref = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    const pulse = 0.7 + Math.sin(t * 1.5 + height) * 0.6;
-    if (ref.current) (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse * 5;
-    if (lightRef.current) lightRef.current.intensity = pulse * 25;
+  useFrame((s) => {
+    const t = s.clock.elapsedTime;
+    const pulse = 0.6 + Math.sin(t * 1.8 + height) * 0.6;
+    if (ref.current) (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse * 6;
+    if (lightRef.current) lightRef.current.intensity = pulse * 30;
   });
   const hex = `#${color.getHexString()}`;
   return (
-    <group position={[0, height + 1.4, 0]}>
+    <group position={[0, height + 1.2, 0]}>
       <mesh ref={ref}>
-        <sphereGeometry args={[0.38, 8, 8]} />
-        <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={3} roughness={0} metalness={1} />
+        <sphereGeometry args={[0.3, 8, 8]} />
+        <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={4} roughness={0} metalness={1} />
       </mesh>
-      <pointLight ref={lightRef} color={hex} intensity={20} distance={40} decay={2} />
+      <pointLight ref={lightRef} color={hex} intensity={20} distance={35} decay={2} />
     </group>
   );
 }
 
-// Individual window squares on building faces
-function WindowGrid({ width, height, hex, isElite }: { width: number, height: number, hex: string, isElite: boolean }) {
-  const cols = Math.max(2, Math.floor(width / 2.2));
-  const rows = Math.max(2, Math.floor(height / 2.5));
-  const winW = (width * 0.7) / cols;
+// Proper per-face window grid — orange-lit squares like Git City
+function BuildingWindows({ width, height, hex }: { width: number, height: number, hex: string }) {
+  const winW = 1.1;
   const winH = 0.7;
+  const gapX = 1.9;
+  const gapY = 2.2;
+  const cols = Math.max(1, Math.floor((width - 1) / gapX));
+  const rows = Math.max(1, Math.floor((height - 1) / gapY));
+  const startX = -(cols - 1) * gapX / 2;
+  const startY = 1.5;
+
   const faces = [
-    { rot: [0, 0, 0] as [number,number,number], pos: [0, 0, width / 2 + 0.02] as [number,number,number] },
-    { rot: [0, Math.PI, 0] as [number,number,number], pos: [0, 0, -(width / 2 + 0.02)] as [number,number,number] },
-    { rot: [0, Math.PI / 2, 0] as [number,number,number], pos: [width / 2 + 0.02, 0, 0] as [number,number,number] },
-    { rot: [0, -Math.PI / 2, 0] as [number,number,number], pos: [-(width / 2 + 0.02), 0, 0] as [number,number,number] },
+    { axis: 'z' as const, sign: 1 },
+    { axis: 'z' as const, sign: -1 },
+    { axis: 'x' as const, sign: 1 },
+    { axis: 'x' as const, sign: -1 },
   ];
 
   return (
     <>
       {faces.map((face, fi) =>
-        Array.from({ length: rows }).map((_, ri) =>
-          Array.from({ length: cols }).map((_, ci) => {
-            const seed = fi * 1000 + ri * 100 + ci;
-            const isLit = (seed * 2654435761) % 100 > 25; // ~75% lit
+        Array.from({ length: rows }, (_, ri) =>
+          Array.from({ length: cols }, (_, ci) => {
+            const seed = (fi * 997 + ri * 31 + ci * 7) % 100;
+            const isLit = seed > 20;
             if (!isLit) return null;
-            const xOffset = (ci - (cols - 1) / 2) * (width * 0.7 / cols);
-            const yPos = ri * 2.5 + 1.8;
+            const xOff = startX + ci * gapX;
+            const yPos = startY + ri * gapY;
+            const offset = width / 2 + 0.03;
+
+            let px = 0, py = yPos, pz = 0;
+            let rx = 0, ry = 0;
+
+            if (face.axis === 'z') {
+              px = xOff; pz = face.sign * offset; ry = face.sign > 0 ? 0 : Math.PI;
+            } else {
+              pz = xOff; px = face.sign * offset; ry = face.sign > 0 ? Math.PI / 2 : -Math.PI / 2;
+            }
+
             return (
-              <mesh
-                key={`${fi}-${ri}-${ci}`}
-                position={[
-                  face.pos[0] + (fi < 2 ? xOffset : 0),
-                  yPos,
-                  face.pos[2] + (fi >= 2 ? xOffset : 0),
-                ]}
-                rotation={face.rot}
-              >
-                <planeGeometry args={[winW * 0.65, winH * 0.75]} />
+              <mesh key={`${fi}-${ri}-${ci}`} position={[px, py, pz]} rotation={[0, ry, 0]}>
+                <planeGeometry args={[winW, winH]} />
                 <meshStandardMaterial
                   color={hex}
                   emissive={hex}
-                  emissiveIntensity={isElite ? 5 : 3}
+                  emissiveIntensity={4}
                   transparent
-                  opacity={0.9}
+                  opacity={0.92}
                 />
               </mesh>
             );
@@ -215,22 +210,17 @@ export default function DevBuilding({ dev, position, theme }: any) {
   if (!dev) return null;
 
   const hue = usernameToHue(dev.username || "dev");
-
-  // Theme-aware color override
-  const themeColors: Record<string, number> = {
-    sunset: 30, neon: 280, emerald: 140, midnight: 210
-  };
-  const effectiveHue = theme && themeColors[theme] ? (hue + themeColors[theme]) % 360 : hue;
-
-  const color = useMemo(() => new THREE.Color().setHSL(effectiveHue / 360, 0.9, 0.62), [effectiveHue]);
-  const colorDark = useMemo(() => new THREE.Color().setHSL(effectiveHue / 360, 0.7, 0.09), [effectiveHue]);
+  const color = useMemo(() => new THREE.Color().setHSL(hue / 360, 0.88, 0.58), [hue]);
+  const colorDark = useMemo(() => new THREE.Color().setHSL(hue / 360, 0.6, 0.07), [hue]);
   const hex = `#${color.getHexString()}`;
 
   const contributions = dev.contributions || 10;
   const repos = dev.repos || 3;
-  const height = Math.max(6, Math.min(55, contributions / 60));
-  const width = Math.max(5, Math.min(14, 4 + repos / 4));
-  const isElite = contributions > 300;
+
+  // Much more dramatic height scaling — like a real city
+  const height = Math.max(8, Math.min(80, 8 + (contributions / 25)));
+  const width = Math.max(6, Math.min(18, 5 + repos / 3));
+  const isElite = contributions > 500;
 
   return (
     <>
@@ -245,64 +235,61 @@ export default function DevBuilding({ dev, position, theme }: any) {
           <meshStandardMaterial
             color={colorDark}
             emissive={color}
-            emissiveIntensity={isElite ? 0.32 : 0.16}
-            roughness={0.15}
-            metalness={0.95}
+            emissiveIntensity={isElite ? 0.28 : 0.14}
+            roughness={0.12}
+            metalness={0.96}
           />
         </mesh>
 
-        {/* Individual window squares */}
-        <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
+        {/* Windows */}
+        <BuildingWindows width={width} height={height} hex={hex} />
 
         {/* Neon corner edges */}
         {([ [-1,-1], [-1,1], [1,-1], [1,1] ] as [number,number][]).map(([sx,sz], ci) => (
-          <mesh key={ci} position={[sx * (width/2 + 0.06), height/2, sz * (width/2 + 0.06)]}>
-            <boxGeometry args={[0.1, height + 0.3, 0.1]} />
-            <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 7 : 4} roughness={0} />
+          <mesh key={ci} position={[sx*(width/2+0.05), height/2, sz*(width/2+0.05)]}>
+            <boxGeometry args={[0.09, height+0.2, 0.09]} />
+            <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 8 : 5} roughness={0} />
           </mesh>
         ))}
 
-        {/* Rooftop ring */}
-        <mesh position={[0, height + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[width * 0.45, width * 0.52, 32]} />
+        {/* Rooftop accent */}
+        <mesh position={[0, height+0.05, 0]} rotation={[-Math.PI/2, 0, 0]}>
+          <ringGeometry args={[width*0.4, width*0.48, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.9} />
         </mesh>
 
-        {/* Ground glow */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-          <circleGeometry args={[width * 1.1, 32]} />
-          <meshBasicMaterial color={hex} transparent opacity={0.15} />
+        {/* Ground glow — no pedestal, just a flat glow ring */}
+        <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.04, 0]}>
+          <ringGeometry args={[width*0.5, width*0.95, 32]} />
+          <meshBasicMaterial color={hex} transparent opacity={0.25} />
         </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-          <ringGeometry args={[width / 2, width * 1.1, 32]} />
-          <meshBasicMaterial color={hex} transparent opacity={0.28} />
+        <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.03, 0]}>
+          <circleGeometry args={[width*0.5, 32]} />
+          <meshBasicMaterial color={hex} transparent opacity={0.1} />
         </mesh>
 
-        <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width * 3} decay={2} />
         <AnimatedBeacon height={height} color={color} />
 
         {dev.avatar_url && (
-          <Html position={[0, height + 4.5, 0]} transform distanceFactor={25} center occlude={false}>
+          <Html position={[0, height+4.2, 0]} transform distanceFactor={30} center occlude={false}>
             <img src={dev.avatar_url} alt={dev.username} style={{
-              width: 38, height: 38, borderRadius: '50%',
-              border: `2px solid ${hex}`,
-              boxShadow: `0 0 12px ${hex}, 0 0 24px ${hex}66`,
-              pointerEvents: 'none', display: 'block',
-            }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+              width: 36, height: 36, borderRadius: '50%',
+              border: `2px solid ${hex}`, boxShadow: `0 0 10px ${hex}`,
+              pointerEvents: 'none',
+            }} onError={e => { e.currentTarget.style.display='none'; }} />
           </Html>
         )}
 
-        <Text position={[0, height + 3.0, 0]} fontSize={0.88} color="white"
-          outlineWidth={0.08} outlineColor="#000" anchorX="center" anchorY="middle">
+        <Text position={[0, height+2.8, 0]} fontSize={0.85} color="white"
+          outlineWidth={0.07} outlineColor="#000" anchorX="center" anchorY="middle">
           {dev.username}
         </Text>
-        <Text position={[0, height + 2.0, 0]} fontSize={0.48} color={hex}
+        <Text position={[0, height+1.9, 0]} fontSize={0.48} color={hex}
           outlineWidth={0.04} outlineColor="#000" anchorX="center" anchorY="middle">
-          {`★ ${contributions} · ${repos} repos`}
+          {`★${contributions} · ${repos}repos`}
         </Text>
       </RigidBody>
 
-      {/* Profile card rendered in DOM */}
       {showCard && <ProfileCard dev={dev} hex={hex} onClose={() => setShowCard(false)} />}
     </>
   );

@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Stars, useProgress, Grid, Cloud } from "@react-three/drei";
+import { Stars, useProgress, Grid } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
@@ -13,17 +13,16 @@ import DevBuilding from "./DevBuilding";
 import { ErrorBoundary } from "./ErrorBoundary";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
+import { useMemo } from "react";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-// Theme definitions
 export const THEMES = {
-  sunset:   { sky: "#1a0a00", horizon: "#c0440a", fog: "#2a0f00", fogDensity: 0.0022, ambient: "#3a1a0a", ground: "#120800", grid: "#2a1000", gridSection: "#3a1800" },
-  midnight: { sky: "#020818", horizon: "#0a2a40", fog: "#020c1a", fogDensity: 0.0028, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060" },
-  neon:     { sky: "#080012", horizon: "#2a0050", fog: "#0d0018", fogDensity: 0.0025, ambient: "#1a0030", ground: "#0a0018", grid: "#1a0040", gridSection: "#2a0060" },
-  emerald:  { sky: "#001a0a", horizon: "#004020", fog: "#001a08", fogDensity: 0.0026, ambient: "#002a10", ground: "#001208", grid: "#002a14", gridSection: "#003a1c" },
+  sunset:   { sky: "#160800", horizon: "#cc3300", fog: "#1a0800", fogDensity: 0.0018, ambient: "#2a1005", ground: "#0e0600", grid: "#2a0e00", gridSection: "#3d1500", sunColor: "#ff6600", sunPos: [-300,60,-500] as [number,number,number] },
+  midnight: { sky: "#020818", horizon: "#0a2a40", fog: "#020c1a", fogDensity: 0.0022, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060", sunColor: "#b0d4ff", sunPos: [180,110,-350] as [number,number,number] },
+  neon:     { sky: "#060012", horizon: "#330060", fog: "#080018", fogDensity: 0.002,  ambient: "#180030", ground: "#080014", grid: "#1a0040", gridSection: "#280060", sunColor: "#aa44ff", sunPos: [0,80,-300] as [number,number,number] },
+  emerald:  { sky: "#001408", horizon: "#003820", fog: "#001408", fogDensity: 0.002,  ambient: "#002210", ground: "#000e06", grid: "#002218", gridSection: "#003020", sunColor: "#44ffaa", sunPos: [100,80,-300] as [number,number,number] },
 };
-
 export type ThemeName = keyof typeof THEMES;
 
 function SceneFog({ theme }: { theme: ThemeName }) {
@@ -37,176 +36,216 @@ function SceneFog({ theme }: { theme: ThemeName }) {
   return null;
 }
 
-function SunsetSky({ theme }: { theme: ThemeName }) {
+function Sky({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
   return (
     <>
-      {/* Sky dome */}
-      <mesh scale={[-1, 1, 1]}>
-        <sphereGeometry args={[790, 32, 32]} />
+      <mesh scale={[-1,1,1]}>
+        <sphereGeometry args={[790,32,32]} />
         <meshBasicMaterial color={t.sky} side={THREE.BackSide} />
       </mesh>
-      {/* Horizon glow band */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 2, 0]}>
-        <ringGeometry args={[300, 800, 64]} />
-        <meshBasicMaterial color={t.horizon} transparent opacity={0.4} side={THREE.DoubleSide} />
+      {/* Horizon band */}
+      <mesh rotation={[-Math.PI/2,0,0]} position={[0,2,0]}>
+        <ringGeometry args={[250,700,64]} />
+        <meshBasicMaterial color={t.horizon} transparent opacity={0.45} side={THREE.DoubleSide} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.5, 0]}>
-        <ringGeometry args={[100, 300, 64]} />
+      <mesh rotation={[-Math.PI/2,0,0]} position={[0,1.5,0]}>
+        <ringGeometry args={[80,250,64]} />
         <meshBasicMaterial color={t.horizon} transparent opacity={0.2} side={THREE.DoubleSide} />
       </mesh>
     </>
   );
 }
 
-function Moon({ theme }: { theme: ThemeName }) {
-  if (theme === 'sunset') {
-    // Sun for sunset theme
-    return (
-      <group position={[-200, 40, -400]}>
-        <mesh>
-          <sphereGeometry args={[18, 32, 32]} />
-          <meshStandardMaterial color="#ff8800" emissive="#ff5500" emissiveIntensity={1.5} roughness={1} />
-        </mesh>
-        <mesh>
-          <sphereGeometry args={[28, 16, 16]} />
-          <meshBasicMaterial color="#ff4400" transparent opacity={0.08} side={THREE.BackSide} />
-        </mesh>
-        <pointLight color="#ff6600" intensity={800} distance={1600} decay={2} />
-      </group>
-    );
-  }
+function CelestialBody({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  const isSunset = theme === 'sunset';
+  const size = isSunset ? 22 : 10;
   return (
-    <group position={[180, 110, -350]}>
+    <group position={t.sunPos}>
       <mesh>
-        <sphereGeometry args={[9, 32, 32]} />
-        <meshStandardMaterial color="#e8f4ff" emissive="#c8e0ff" emissiveIntensity={0.8} roughness={0.9} />
+        <sphereGeometry args={[size,32,32]} />
+        <meshStandardMaterial color={t.sunColor} emissive={t.sunColor} emissiveIntensity={isSunset ? 1.2 : 0.8} roughness={1} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[13, 16, 16]} />
-        <meshBasicMaterial color="#aaccff" transparent opacity={0.06} side={THREE.BackSide} />
+        <sphereGeometry args={[size*1.5,16,16]} />
+        <meshBasicMaterial color={t.sunColor} transparent opacity={0.07} side={THREE.BackSide} />
       </mesh>
-      <pointLight color="#b0d4ff" intensity={600} distance={1400} decay={2} />
+      <pointLight color={t.sunColor} intensity={isSunset ? 1000 : 700} distance={2000} decay={2} />
     </group>
   );
 }
 
-function Tree({ position }: { position: [number, number, number] }) {
+// Properly scaled trees — SMALL, like city park trees
+function Tree({ position, scale = 1 }: { position: [number,number,number], scale?: number }) {
   const seed = position[0] * 13.7 + position[2] * 7.3;
-  const trunkH = 2.5 + (Math.abs(Math.sin(seed)) * 1.5);
-  const canopyR = 1.8 + (Math.abs(Math.cos(seed)) * 1.4);
-  const hues = [145, 160, 130, 170, 120];
-  const hue = hues[Math.abs(Math.floor(seed * 3.7)) % hues.length];
-  const sat = 45 + (Math.abs(Math.sin(seed * 2)) * 20);
-  const light = 14 + (Math.abs(Math.cos(seed * 3)) * 10);
-  const green = `hsl(${hue}, ${sat}%, ${light}%)`;
+  const trunkH = (1.5 + (Math.abs(Math.sin(seed)) * 0.8)) * scale;
+  const canopyR = (1.0 + (Math.abs(Math.cos(seed)) * 0.8)) * scale;
+  const hues = [145,155,130,165];
+  const hue = hues[Math.abs(Math.floor(seed*3.7)) % hues.length];
+  const green = `hsl(${hue}, 50%, 16%)`;
   return (
     <group position={position}>
-      <mesh position={[0, trunkH / 2, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.32, trunkH, 6]} />
+      <mesh position={[0,trunkH/2,0]} castShadow>
+        <cylinderGeometry args={[0.15,0.2,trunkH,6]} />
         <meshStandardMaterial color="#1a0c06" roughness={1} />
       </mesh>
-      <mesh position={[0, trunkH + canopyR * 0.5, 0]} castShadow>
-        <coneGeometry args={[canopyR, canopyR * 1.5, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
+      <mesh position={[0,trunkH+canopyR*0.5,0]} castShadow>
+        <coneGeometry args={[canopyR,canopyR*1.6,7]} />
+        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.1} />
       </mesh>
-      <mesh position={[0, trunkH + canopyR * 1.1, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.68, canopyR * 1.2, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
+      <mesh position={[0,trunkH+canopyR*1.15,0]} castShadow>
+        <coneGeometry args={[canopyR*0.65,canopyR*1.2,7]} />
+        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.1} />
       </mesh>
-      <mesh position={[0, trunkH + canopyR * 1.65, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.38, canopyR * 0.85, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.15} />
+      <mesh position={[0,trunkH+canopyR*1.7,0]} castShadow>
+        <coneGeometry args={[canopyR*0.35,canopyR*0.8,7]} />
+        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
       </mesh>
     </group>
   );
 }
 
-function WaterBody({ position, sx, sz }: { position: [number,number,number], sx: number, sz: number }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((s) => {
-    if (ref.current) {
-      (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity =
-        0.45 + Math.sin(s.clock.elapsedTime * 0.5) * 0.2;
-    }
-  });
+// Road network
+function Roads() {
+  const mat = <meshStandardMaterial color="#0a0a0a" roughness={0.95} />;
   return (
-    <group position={position} scale={[sx, 1, sz]}>
-      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-        <circleGeometry args={[1, 48]} />
-        <meshStandardMaterial color="#041220" emissive="#0a4070" emissiveIntensity={0.45} roughness={0.02} metalness={0.98} transparent opacity={0.92} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <ringGeometry args={[0.9, 1.1, 48]} />
-        <meshBasicMaterial color="#1a8090" transparent opacity={0.6} />
-      </mesh>
-    </group>
-  );
-}
-
-function Fireflies() {
-  const count = 30;
-  const data = useRef(Array.from({ length: count }, (_, i) => ({
-    pos: new THREE.Vector3((((i * 137.5) % 300) - 150), 1.2 + ((i * 73) % 9), (((i * 89.3) % 300) - 150)),
-    phase: i * 0.8,
-  })));
-  const refs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame((s) => {
-    const t = s.clock.elapsedTime;
-    refs.current.forEach((m, i) => {
-      if (!m) return;
-      const d = data.current[i];
-      const pulse = Math.sin(t * 2.2 + d.phase) * 0.5 + 0.5;
-      (m.material as THREE.MeshBasicMaterial).opacity = pulse * 0.9;
-      m.position.y = d.pos.y + Math.sin(t * 0.55 + d.phase) * 1.1;
-      m.position.x = d.pos.x + Math.cos(t * 0.3 + d.phase * 0.5) * 0.8;
-    });
-  });
-  return (
-    <>
-      {data.current.map((d, i) => (
-        <mesh key={i} ref={el => { refs.current[i] = el; }} position={d.pos}>
-          <sphereGeometry args={[0.08, 4, 4]} />
-          <meshBasicMaterial color="#88ffaa" transparent opacity={0.7} />
+    <group position={[0, 0.02, 0]}>
+      {/* Main avenues */}
+      {[-60,0,60].map(x => (
+        <mesh key={`v${x}`} rotation={[-Math.PI/2,0,0]} position={[x,0,0]}>
+          <planeGeometry args={[8,600]} />
+          {mat}
         </mesh>
       ))}
-    </>
+      {[-120,-60,0,60,120].map(z => (
+        <mesh key={`h${z}`} rotation={[-Math.PI/2,0,0]} position={[0,0,z]}>
+          <planeGeometry args={[600,8]} />
+          {mat}
+        </mesh>
+      ))}
+      {/* Road lines */}
+      {[-60,0,60].map(x =>
+        [-2,-1,0,1,2].map(seg => (
+          <mesh key={`vl${x}${seg}`} rotation={[-Math.PI/2,0,0]} position={[x,0.01,seg*100]}>
+            <planeGeometry args={[0.3,40]} />
+            <meshBasicMaterial color="#333" />
+          </mesh>
+        ))
+      )}
+    </group>
   );
 }
 
-function buildTreePositions(): [number, number, number][] {
-  const positions: [number, number, number][] = [];
-  for (let i = 0; i < 80; i++) {
-    const angle = (i / 80) * Math.PI * 2;
-    const r = 220 + (i % 3) * 30 + (i * 7.3) % 20;
-    positions.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
-  }
-  for (let i = 0; i < 40; i++) {
-    const x = (((i * 137.508) % 340) - 170);
-    const z = (((i * 89.31) % 340) - 170);
-    if (Math.sqrt(x * x + z * z) > 80) positions.push([x, 0, z]);
-  }
-  return positions;
-}
-const TREE_POSITIONS = buildTreePositions();
+// Background skyline silhouette — fake distant buildings for depth
+function BackgroundSkyline({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  const buildings = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < 60; i++) {
+      const x = (i * 47.3 % 600) - 300;
+      const z = -280 - (i % 4) * 40;
+      const h = 20 + (i * 17.7 % 60);
+      const w = 8 + (i * 7.3 % 14);
+      result.push({ x, z, h, w });
+    }
+    return result;
+  }, []);
 
-// Dense city layout — buildings packed tight like a real skyline
-function buildCityLayout(count: number): [number, number, number][] {
-  const positions: [number, number, number][] = [];
-  // Core downtown — very tight
-  const cols = Math.ceil(Math.sqrt(count));
+  return (
+    <group>
+      {buildings.map((b, i) => (
+        <mesh key={i} position={[b.x, b.h/2, b.z]}>
+          <boxGeometry args={[b.w, b.h, b.w*0.8]} />
+          <meshStandardMaterial
+            color="#050810"
+            emissive={t.horizon}
+            emissiveIntensity={0.04}
+            roughness={0.2}
+            metalness={0.9}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Dense park trees — small, surrounding city
+const PARK_TREES = (() => {
+  const out: [number,number,number][] = [];
+  // Outer perimeter belt
+  for (let i = 0; i < 120; i++) {
+    const angle = (i/120)*Math.PI*2;
+    const r = 180 + (i%5)*15 + (i*3.7)%12;
+    out.push([Math.cos(angle)*r, 0, Math.sin(angle)*r]);
+  }
+  // Park clusters between buildings
+  const parkSpots = [[80,0,60],[-80,0,60],[120,0,-40],[-120,0,-40],[0,0,120]];
+  parkSpots.forEach(([x,,z], pi) => {
+    for (let j=0; j<8; j++) {
+      const a = (j/8)*Math.PI*2;
+      const r = 10 + (j*3.1)%8;
+      out.push([x+Math.cos(a)*r, 0, z+Math.sin(a)*r]);
+    }
+  });
+  return out;
+})();
+
+function CityLights({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  // Street lamps along roads
+  const lamps: [number,number,number][] = [];
+  [-60,0,60].forEach(x => {
+    for (let z=-150; z<=150; z+=30) lamps.push([x+5, 0, z]);
+  });
+  return (
+    <group>
+      {lamps.map((pos, i) => (
+        <group key={i} position={pos}>
+          <mesh position={[0, 4, 0]}>
+            <cylinderGeometry args={[0.08, 0.12, 8, 6]} />
+            <meshStandardMaterial color="#1a1a1a" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 8.2, 0]}>
+            <sphereGeometry args={[0.3, 8, 8]} />
+            <meshStandardMaterial color="#ffcc44" emissive="#ffcc44" emissiveIntensity={3} />
+          </mesh>
+          <pointLight position={[0, 8, 0]} color="#ffcc44" intensity={15} distance={25} decay={2} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// Dense city grid — tight spacing
+function buildCityLayout(count: number): [number,number,number][] {
+  const positions: [number,number,number][] = [];
+  // Block-based layout with road gaps
+  const blockW = 22;
+  const roadGap = 8;
+  const blocksPerRow = 5;
   for (let i = 0; i < count; i++) {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    // Staggered grid with slight random offset (deterministic)
-    const offsetX = ((i * 7.3) % 8) - 4;
-    const offsetZ = ((i * 11.7) % 8) - 4;
-    const x = (col - cols / 2) * 22 + offsetX;
-    const z = (row - cols / 2) * 22 + offsetZ - 60;
-    positions.push([x, 0, z]);
+    const col = i % blocksPerRow;
+    const row = Math.floor(i / blocksPerRow);
+    const blockX = col * (blockW + roadGap) - (blocksPerRow/2)*(blockW+roadGap);
+    const blockZ = row * (blockW + roadGap) - 80;
+    // Slight deterministic jitter within block
+    const jx = ((i * 7.3) % 8) - 4;
+    const jz = ((i * 11.7) % 8) - 4;
+    positions.push([blockX + jx, 0, blockZ + jz]);
   }
   return positions;
 }
+
+// removed
+  const ref = useRef<any>(undefined);
+  const depsRef = useRef<any[]>([]);
+  if (!ref.current || deps.some((d, i) => d !== depsRef.current[i])) {
+    ref.current = fn();
+    depsRef.current = deps;
+  }
+  return ref.current;
+};
 
 function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, theme: ThemeName }) {
   const t = THEMES[theme];
@@ -215,47 +254,53 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
   return (
     <>
       <SceneFog theme={theme} />
-      <SunsetSky theme={theme} />
-      <Stars radius={350} depth={80} count={theme === 'sunset' ? 2000 : 7000} factor={6} saturation={0.7} fade speed={0.12} />
-
-      <Cloud position={[-80, 55, -220]} speed={0.1} opacity={0.18} color={theme === 'sunset' ? "#804020" : "#1a3060"} scale={4} />
-      <Cloud position={[130, 70, -280]} speed={0.08} opacity={0.14} color={theme === 'sunset' ? "#602010" : "#112244"} scale={3} />
-
-      <Moon theme={theme} />
-      <Fireflies />
-
-      <ambientLight intensity={0.6} color={t.ambient} />
-      <directionalLight
-        position={theme === 'sunset' ? [-200, 40, -400] : [180, 110, -350]}
-        intensity={theme === 'sunset' ? 1.8 : 1.4}
-        color={theme === 'sunset' ? "#ff8844" : "#c0d8ff"}
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-far={600}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
+      <Sky theme={theme} />
+      <Stars
+        radius={400} depth={60}
+        count={theme === 'sunset' ? 1500 : 6000}
+        factor={5} saturation={0.6} fade speed={0.1}
       />
-      <pointLight position={[0, 3, -50]} intensity={700} color={theme === 'sunset' ? "#ff4400" : "#ff4400"} distance={400} decay={2} />
-      <pointLight position={[130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ff8800" : "#2255ff"} distance={450} decay={2} />
-      <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
+
+      <CelestialBody theme={theme} />
+      <BackgroundSkyline theme={theme} />
+      <CityLights theme={theme} />
+
+      {/* Lighting — NO red ground blob */}
+      <ambientLight intensity={0.55} color={t.ambient} />
+      <directionalLight
+        position={t.sunPos}
+        intensity={theme === 'sunset' ? 2.0 : 1.5}
+        color={t.sunColor}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-far={700}
+        shadow-camera-left={-250}
+        shadow-camera-right={250}
+        shadow-camera-top={250}
+        shadow-camera-bottom={-250}
+      />
+      {/* City bounce lights — positioned HIGH, not at ground */}
+      <pointLight position={[0, 80, -100]} color={t.sunColor} intensity={300} distance={600} decay={2} />
+      <pointLight position={[120, 60, -80]} color="#2255ff" intensity={200} distance={400} decay={2} />
+      <pointLight position={[-120, 60, -80]} color="#00ddbb" intensity={200} distance={400} decay={2} />
 
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
         <Ecctrl
           animated={false}
           jumpVel={flyMode ? 0 : 8}
-          maxVelLimit={flyMode ? 20 : 10}
-          camInitDis={-8} camMinDis={-3} camMaxDis={-15}
-          camInitDir={{ x: -0.15, y: 0 }}
-          position={[0, 4, 80]}
+          maxVelLimit={flyMode ? 25 : 10}
+          camInitDis={-10}
+          camMinDis={-4}
+          camMaxDis={-20}
+          camInitDir={{ x: -0.2, y: 0 }}
+          position={[0, 5, 110]}
         >
           <mesh castShadow>
-            <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
+            <capsuleGeometry args={[0.3, 0.7, 8, 16]} />
             <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
           </mesh>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
-            <ringGeometry args={[0.28, 0.55, 16]} />
+          <mesh rotation={[-Math.PI/2,0,0]} position={[0,-0.7,0]}>
+            <ringGeometry args={[0.32,0.6,16]} />
             <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
           </mesh>
         </Ecctrl>
@@ -264,60 +309,56 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
           <DevBuilding
             key={dev.username || i}
             dev={dev}
-            position={cityLayout[i] || [i * 20, 0, 0]}
+            position={cityLayout[i] || [i*20, 0, 0]}
             theme={theme}
           />
         ))}
 
         <RigidBody type="fixed">
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[3000, 3000]} />
-            <meshStandardMaterial color={t.ground} roughness={0.96} metalness={0.1} />
+          <mesh rotation={[-Math.PI/2,0,0]} receiveShadow>
+            <planeGeometry args={[3000,3000]} />
+            <meshStandardMaterial color={t.ground} roughness={0.96} metalness={0.05} />
           </mesh>
         </RigidBody>
       </Physics>
 
+      <Roads />
+
       <Grid
-        position={[0, 0.02, 0]}
-        args={[3000, 3000]}
-        cellSize={10} cellThickness={0.4} cellColor={t.grid}
-        sectionSize={50} sectionThickness={1.0} sectionColor={t.gridSection}
-        fadeDistance={500} fadeStrength={1.2} infiniteGrid
+        position={[0, 0.025, 0]}
+        args={[3000,3000]}
+        cellSize={10} cellThickness={0.3} cellColor={t.grid}
+        sectionSize={60} sectionThickness={0.8} sectionColor={t.gridSection}
+        fadeDistance={600} fadeStrength={1.0} infiniteGrid
       />
 
-      <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
-      <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
-      <WaterBody position={[0, 0, 200]} sx={40} sz={25} />
-
-      {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
+      {PARK_TREES.map((pos, i) => (
+        <Tree key={i} position={pos} scale={0.8} />
+      ))}
     </>
   );
 }
 
-// Activity feed ticker
 function ActivityFeed({ devs }: { devs: any[] }) {
-  const items = devs?.slice(0, 20).map(d =>
-    `⬡ ${d.username} · ${d.contributions} commits · ${d.repos} repos`
+  const items = devs?.slice(0,30).map(d =>
+    `⬡ ${d.username}  ★ ${d.contributions} commits  ◎ ${d.repos} repos`
   ) || [];
   const doubled = [...items, ...items];
-
   return (
     <div style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
-      height: 28, background: 'rgba(0,0,0,0.7)',
-      borderTop: '1px solid rgba(255,255,255,0.06)',
+      height: 26, background: 'rgba(0,0,0,0.85)',
+      borderTop: '1px solid rgba(255,255,255,0.05)',
       overflow: 'hidden', display: 'flex', alignItems: 'center',
     }}>
       <div style={{
-        display: 'flex', gap: 60, whiteSpace: 'nowrap',
-        animation: 'ticker 40s linear infinite',
-        fontSize: 10, color: '#22c55e', fontFamily: 'monospace', letterSpacing: 1,
+        display: 'flex', gap: 80, whiteSpace: 'nowrap',
+        animation: 'ticker 60s linear infinite',
+        fontSize: 9, color: '#22c55e', fontFamily: 'monospace', letterSpacing: 1.5,
       }}>
         {doubled.map((item, i) => <span key={i}>{item}</span>)}
       </div>
-      <style>{`
-        @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-      `}</style>
+      <style>{`@keyframes ticker { from{transform:translateX(0)} to{transform:translateX(-50%)} }`}</style>
     </div>
   );
 }
@@ -349,16 +390,16 @@ export default function WorldClient({ username }: { username: string }) {
   const isDataReady = mounted && devs;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#050204', overflow: 'hidden' }}>
       {!isDataReady && <LoadingScreen progress={progress || 10} />}
       {isDataReady && (
         <>
           <ErrorBoundary>
             <Canvas
               shadows
-              gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
-              camera={{ fov: 65, position: [0, 8, 120], near: 0.1, far: 2000 }}
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+              gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.4 }}
+              camera={{ fov: 60, position: [0, 12, 120], near: 0.1, far: 2000 }}
+              style={{ position: 'absolute', inset: 0 }}
             >
               <Suspense fallback={null}>
                 <WorldScene devs={devs} flyMode={flyMode} theme={theme} />
@@ -369,20 +410,17 @@ export default function WorldClient({ username }: { username: string }) {
           <HUD
             username={username}
             playersCount={Object.keys(players).length + 1}
-            flyMode={flyMode}
-            setFlyMode={setFlyMode}
-            devs={devs}
-            theme={theme}
-            setTheme={setTheme}
+            flyMode={flyMode} setFlyMode={setFlyMode}
+            devs={devs} theme={theme} setTheme={setTheme}
           />
           <Chat username={username} />
           <ActivityFeed devs={devs} />
 
           {isTouch && (
             <div style={{
-              position: 'fixed', bottom: '36px', left: '8px', zIndex: 40,
-              transform: 'scale(0.58)', transformOrigin: 'bottom left',
-              opacity: 0.78, pointerEvents: 'auto',
+              position: 'fixed', bottom: '34px', left: '8px', zIndex: 40,
+              transform: 'scale(0.55)', transformOrigin: 'bottom left',
+              opacity: 0.8, pointerEvents: 'auto',
             }}>
               <EcctrlJoystick />
             </div>
