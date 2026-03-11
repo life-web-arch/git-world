@@ -4,6 +4,7 @@ import { Text, Html } from "@react-three/drei";
 import { useRef, useMemo, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { createPortal } from "react-dom";
 
 function usernameToHue(username: string): number {
   let hash = 0;
@@ -32,9 +33,9 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
   const nextXp = [100,300,800,2000,5000,10000,20000,50000,100000,999999][level - 1];
   const progress = Math.min(100, (xp / nextXp) * 100);
 
-  return (
+  const card = (
     <div style={{
-      position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
+      position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 9999,
       background: '#0a0d14',
       borderTop: `2px solid ${hex}`,
       borderRadius: '20px 20px 0 0',
@@ -47,7 +48,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       `}</style>
 
-      {/* Close bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ width: 40, height: 4, background: '#333', borderRadius: 2, margin: '0 auto' }} />
         <button onClick={onClose} style={{
@@ -56,7 +56,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
         }}>✕</button>
       </div>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
         {dev.avatar_url && (
           <img src={dev.avatar_url} alt={dev.username} style={{
@@ -74,7 +73,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
         </div>
       </div>
 
-      {/* Level bar */}
       <div style={{
         background: '#111827', borderRadius: 10, padding: '10px 14px',
         border: `1px solid ${hex}44`, marginBottom: 14
@@ -95,11 +93,10 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
         </div>
       </div>
 
-      {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
         {[
           { label: 'COMMITS', value: (dev.contributions || 0).toLocaleString() },
-          { label: 'REPOS', value: (dev.repos || 0).toLocaleString() },
+          { label: 'REPOS',   value: (dev.repos || 0).toLocaleString() },
           { label: 'FOLLOWERS', value: (dev.followers || 0).toLocaleString() },
         ].map(({ label, value }) => (
           <div key={label} style={{
@@ -112,7 +109,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
         ))}
       </div>
 
-      {/* Actions */}
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           onClick={() => window.open(`https://github.com/${dev.username}`, '_blank')}
@@ -137,6 +133,10 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
       </div>
     </div>
   );
+
+  // ✅ Portal renders card into document.body — completely outside R3F canvas
+  if (typeof document === 'undefined') return null;
+  return createPortal(card, document.body);
 }
 
 function AnimatedBeacon({ height, color }: { height: number; color: THREE.Color }) {
@@ -160,12 +160,10 @@ function AnimatedBeacon({ height, color }: { height: number; color: THREE.Color 
   );
 }
 
-// Individual window squares on building faces
 function WindowGrid({ width, height, hex, isElite }: { width: number, height: number, hex: string, isElite: boolean }) {
   const cols = Math.max(2, Math.floor(width / 2.2));
   const rows = Math.max(2, Math.floor(height / 2.5));
   const winW = (width * 0.7) / cols;
-  const winH = 0.7;
   const faces = [
     { rot: [0, 0, 0] as [number,number,number], pos: [0, 0, width / 2 + 0.02] as [number,number,number] },
     { rot: [0, Math.PI, 0] as [number,number,number], pos: [0, 0, -(width / 2 + 0.02)] as [number,number,number] },
@@ -179,7 +177,7 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
         Array.from({ length: rows }).map((_, ri) =>
           Array.from({ length: cols }).map((_, ci) => {
             const seed = fi * 1000 + ri * 100 + ci;
-            const isLit = (seed * 2654435761) % 100 > 25; // ~75% lit
+            const isLit = (seed * 2654435761) % 100 > 25;
             if (!isLit) return null;
             const xOffset = (ci - (cols - 1) / 2) * (width * 0.7 / cols);
             const yPos = ri * 2.5 + 1.8;
@@ -193,7 +191,7 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
                 ]}
                 rotation={face.rot}
               >
-                <planeGeometry args={[winW * 0.65, winH * 0.75]} />
+                <planeGeometry args={[winW * 0.65, 0.7 * 0.75]} />
                 <meshStandardMaterial
                   color={hex}
                   emissive={hex}
@@ -216,7 +214,6 @@ export default function DevBuilding({ dev, position, theme }: any) {
 
   const hue = usernameToHue(dev.username || "dev");
 
-  // Theme-aware color override
   const themeColors: Record<string, number> = {
     sunset: 30, neon: 280, emerald: 140, midnight: 210
   };
@@ -235,7 +232,6 @@ export default function DevBuilding({ dev, position, theme }: any) {
   return (
     <>
       <RigidBody type="fixed" position={position} colliders="cuboid">
-        {/* Main tower */}
         <mesh
           position={[0, height / 2, 0]}
           castShadow receiveShadow
@@ -251,10 +247,8 @@ export default function DevBuilding({ dev, position, theme }: any) {
           />
         </mesh>
 
-        {/* Individual window squares */}
         <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
 
-        {/* Neon corner edges */}
         {([ [-1,-1], [-1,1], [1,-1], [1,1] ] as [number,number][]).map(([sx,sz], ci) => (
           <mesh key={ci} position={[sx * (width/2 + 0.06), height/2, sz * (width/2 + 0.06)]}>
             <boxGeometry args={[0.1, height + 0.3, 0.1]} />
@@ -262,13 +256,11 @@ export default function DevBuilding({ dev, position, theme }: any) {
           </mesh>
         ))}
 
-        {/* Rooftop ring */}
         <mesh position={[0, height + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[width * 0.45, width * 0.52, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.9} />
         </mesh>
 
-        {/* Ground glow */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
           <circleGeometry args={[width * 1.1, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.15} />
@@ -302,7 +294,7 @@ export default function DevBuilding({ dev, position, theme }: any) {
         </Text>
       </RigidBody>
 
-      {/* Profile card rendered in DOM */}
+      {/* ✅ ProfileCard is OUTSIDE RigidBody — portaled to document.body */}
       {showCard && <ProfileCard dev={dev} hex={hex} onClose={() => setShowCard(false)} />}
     </>
   );
