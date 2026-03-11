@@ -75,11 +75,13 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
 }
 
 function AvatarBillboard({ url, height, onSelect }: { url: string, height: number, onSelect: () => void }) {
+  // url in deps — if avatar_url changes in DB, texture regenerates
   const texture = useMemo(() => {
     const tex = new THREE.TextureLoader().load(url);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, [url]);
+
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ camera }) => {
     if (ref.current) ref.current.quaternion.copy(camera.quaternion);
@@ -99,6 +101,7 @@ function AvatarBillboard({ url, height, onSelect }: { url: string, height: numbe
 function NameLabel({ username, stats, height, hex, onSelect }: {
   username: string, stats: string, height: number, hex: string, onSelect: () => void
 }) {
+  // stats + hex in deps — if contributions/repos change, canvas redraws
   const texture = useMemo(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -118,7 +121,7 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
     return tex;
-  }, [username, stats, hex]);
+  }, [username, stats, hex]); // stats changes → texture regenerates
 
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ camera }) => {
@@ -153,15 +156,14 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
   const height  = Math.max(6, Math.min(55, contributions / 60));
   const width   = Math.max(5, Math.min(14, 4 + repos / 4));
   const isElite = contributions > 300;
+  // stats string is the dep that carries contribution+repo data into NameLabel
   const stats   = `★ ${contributions} · ${repos} repos`;
 
-  // Single handler passed to all clickable elements
   const handleSelect = () => onSelect(dev, hex);
 
   return (
     <RigidBody type="fixed" position={position} colliders="cuboid">
 
-      {/* Main tower */}
       <mesh
         position={[0, height / 2, 0]}
         castShadow receiveShadow
@@ -177,7 +179,6 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
 
       <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
 
-      {/* Corner edges */}
       {([ [-1,-1], [-1,1], [1,-1], [1,1] ] as [number,number][]).map(([sx,sz], ci) => (
         <mesh key={ci} position={[sx*(width/2+0.06), height/2, sz*(width/2+0.06)]}>
           <boxGeometry args={[0.1, height+0.3, 0.1]} />
@@ -185,13 +186,11 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
         </mesh>
       ))}
 
-      {/* Rooftop ring */}
       <mesh position={[0, height+0.08, 0]} rotation={[-Math.PI/2, 0, 0]}>
         <ringGeometry args={[width*0.45, width*0.52, 32]} />
         <meshBasicMaterial color={hex} transparent opacity={0.9} />
       </mesh>
 
-      {/* Ground glow */}
       <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.06, 0]}>
         <circleGeometry args={[width*1.1, 32]} />
         <meshBasicMaterial color={hex} transparent opacity={0.15} />
@@ -200,12 +199,10 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
       <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width*3} decay={2} />
       <AnimatedBeacon height={height} color={color} />
 
-      {/* ✅ Avatar — clickable */}
       {dev.avatar_url && (
         <AvatarBillboard url={dev.avatar_url} height={height} onSelect={handleSelect} />
       )}
 
-      {/* ✅ Name + stats label — clickable */}
       <NameLabel
         username={dev.username}
         stats={stats}
