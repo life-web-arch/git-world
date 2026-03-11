@@ -74,7 +74,7 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
   );
 }
 
-function AvatarBillboard({ url, height }: { url: string, height: number }) {
+function AvatarBillboard({ url, height, onSelect }: { url: string, height: number, onSelect: () => void }) {
   const texture = useMemo(() => {
     const tex = new THREE.TextureLoader().load(url);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -85,14 +85,20 @@ function AvatarBillboard({ url, height }: { url: string, height: number }) {
     if (ref.current) ref.current.quaternion.copy(camera.quaternion);
   });
   return (
-    <mesh ref={ref} position={[0, height + 4.5, 0]}>
+    <mesh
+      ref={ref}
+      position={[0, height + 4.5, 0]}
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+    >
       <circleGeometry args={[1.0, 32]} />
       <meshBasicMaterial map={texture} transparent side={THREE.DoubleSide} />
     </mesh>
   );
 }
 
-function NameLabel({ username, stats, height, hex }: { username: string, stats: string, height: number, hex: string }) {
+function NameLabel({ username, stats, height, hex, onSelect }: {
+  username: string, stats: string, height: number, hex: string, onSelect: () => void
+}) {
   const texture = useMemo(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -120,15 +126,17 @@ function NameLabel({ username, stats, height, hex }: { username: string, stats: 
   });
 
   return (
-    <mesh ref={ref} position={[0, height + 2.2, 0]}>
+    <mesh
+      ref={ref}
+      position={[0, height + 2.2, 0]}
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+    >
       <planeGeometry args={[8, 2]} />
       <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
 }
 
-// Only pure Three.js — no onClick state, no portals, no DOM inside R3F
-// onSelect is called by parent (WorldClient) which lives outside Canvas
 export default function DevBuilding({ dev, position, theme, onSelect }: any) {
   if (!dev) return null;
 
@@ -147,14 +155,17 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
   const isElite = contributions > 300;
   const stats   = `★ ${contributions} · ${repos} repos`;
 
+  // Single handler passed to all clickable elements
+  const handleSelect = () => onSelect(dev, hex);
+
   return (
     <RigidBody type="fixed" position={position} colliders="cuboid">
 
-      {/* Main tower — click calls onSelect (parent handles DOM) */}
+      {/* Main tower */}
       <mesh
         position={[0, height / 2, 0]}
         castShadow receiveShadow
-        onClick={(e) => { e.stopPropagation(); onSelect(dev, hex); }}
+        onClick={(e) => { e.stopPropagation(); handleSelect(); }}
       >
         <boxGeometry args={[width, height, width]} />
         <meshStandardMaterial
@@ -189,8 +200,19 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
       <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width*3} decay={2} />
       <AnimatedBeacon height={height} color={color} />
 
-      {dev.avatar_url && <AvatarBillboard url={dev.avatar_url} height={height} />}
-      <NameLabel username={dev.username} stats={stats} height={height} hex={hex} />
+      {/* ✅ Avatar — clickable */}
+      {dev.avatar_url && (
+        <AvatarBillboard url={dev.avatar_url} height={height} onSelect={handleSelect} />
+      )}
+
+      {/* ✅ Name + stats label — clickable */}
+      <NameLabel
+        username={dev.username}
+        stats={stats}
+        height={height}
+        hex={hex}
+        onSelect={handleSelect}
+      />
 
     </RigidBody>
   );
