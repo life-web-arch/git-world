@@ -16,6 +16,14 @@ import { useFrame, useThree } from "@react-three/fiber";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
+// SWR config: fetch fresh data every 5 minutes in background
+// This picks up any stats that were updated by background syncs
+const SWR_CONFIG = {
+  revalidateOnFocus: false,
+  refreshInterval: 5 * 60 * 1000, // 5 minutes
+  dedupingInterval: 60 * 1000,    // don't refetch if last fetch was <1min ago
+};
+
 export const THEMES = {
   sunset:   { sky: "#1a0a00", horizon: "#c0440a", fog: "#2a0f00", fogDensity: 0.0022, ambient: "#3a1a0a", ground: "#120800", grid: "#2a1000", gridSection: "#3a1800" },
   midnight: { sky: "#020818", horizon: "#0a2a40", fog: "#020c1a", fogDensity: 0.0028, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060" },
@@ -209,7 +217,6 @@ function buildCityLayout(count: number): [number, number, number][] {
   return positions;
 }
 
-// Counts rendered frames — after N frames Rapier colliders are guaranteed registered
 function FrameGate({ onReady, frames = 5 }: { onReady: () => void, frames?: number }) {
   const count = useRef(0);
   const done = useRef(false);
@@ -260,10 +267,7 @@ function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady, playerR
       <pointLight position={[130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ff8800" : "#2255ff"} distance={450} decay={2} />
       <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
 
-      {/* Single Physics world — ground + buildings + player all share same Rapier instance */}
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-
-        {/* Ground must be first so collider registers before player spawns */}
         <RigidBody type="fixed" colliders="cuboid">
           <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
             <planeGeometry args={[3000, 3000]} />
@@ -271,7 +275,6 @@ function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady, playerR
           </mesh>
         </RigidBody>
 
-        {/* Gate fires onPhysicsReady after 5 rendered frames — ground collider is guaranteed by then */}
         <FrameGate onReady={onPhysicsReady} frames={5} />
 
         {devs?.map((dev: any, i: number) => (
@@ -284,7 +287,6 @@ function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady, playerR
           />
         ))}
 
-        {/* Player only mounts after FrameGate fires — so it always lands on solid ground */}
         {playerReady && (
           <Ecctrl
             animated={false}
@@ -339,13 +341,17 @@ function ActivityFeed({ devs }: { devs: any[] }) {
 
 export default function WorldClient({ username }: { username: string }) {
   const [mounted, setMounted] = useState(false);
-  const { data: devs, isLoading } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
+
+  // refreshInterval: SWR re-fetches from /api/city every 5 min
+  // /api/city returns DB instantly, but also fires background GitHub syncs for stale devs
+  // So within ~5 min of a sync completing, the next SWR poll will pick up fresh avatars/stats
+  const { data: devs, isLoading } = useSWR('/api/city', fetcher, SWR_CONFIG);
+
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
   const [selectedDev, setSelectedDev] = useState<{ dev: any, hex: string } | null>(null);
-  // physicsReady: ground collider confirmed → safe to spawn player
   const [physicsReady, setPhysicsReady] = useState(false);
   const room = useRef<any>(null);
 
@@ -361,16 +367,29 @@ export default function WorldClient({ username }: { username: string }) {
     return () => { room.current?.unsubscribe(); };
   }, []);
 
+  // Also listen to Supabase Realtime on the developers table directly
+  // If a background sync updates a row, this fires immediately — no need to wait for SWR poll
+  useEffect(() => {
+    const channel = supabase
+      .channel('developers-updates')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'developers' },
+        () => {
+          // A dev's stats just updated in DB — trigger SWR to refetch
+          // mutate() with no args tells all useSWR('/api/city') instances to revalidate
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   const isDataReady = mounted && devs && !isLoading;
   const handleSelectDev = (dev: any, hex: string) => setSelectedDev({ dev, hex });
-
-  // Loading screen progress
   const loadProgress = !mounted ? 10 : isLoading ? 35 : !physicsReady ? 75 : 100;
 
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
-
-      {/* Hide loading screen only when physics + player are truly ready */}
       {!physicsReady && <LoadingScreen progress={loadProgress} />}
 
       {mounted && (
@@ -405,7 +424,6 @@ export default function WorldClient({ username }: { username: string }) {
         />
       )}
 
-      {/* HUD, chat, joystick — all gated behind physicsReady so no input before world exists */}
       {isDataReady && physicsReady && (
         <>
           <HUD

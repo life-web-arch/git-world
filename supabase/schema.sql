@@ -23,3 +23,6 @@ ADD COLUMN stats_last_updated_at TIMESTAMPTZ;
 ALTER TABLE public.developers
 ADD COLUMN IF NOT EXISTS followers integer DEFAULT 0;
 
+
+-- Migration: enable Realtime on developers table
+ALTER PUBLICATION supabase_realtime ADD TABLE public.developers;
