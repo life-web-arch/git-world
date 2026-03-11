@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabaseServer } from "./supabase-server";
 
 export async function getDevStats(username: string, accessToken?: string) {
   const token = accessToken || process.env.GITHUB_PAT;
@@ -36,14 +36,12 @@ export async function getDevStats(username: string, accessToken?: string) {
     const user = json.data?.user;
 
     const publicContribs = user?.contributionsCollection?.contributionCalendar?.totalContributions || 10;
-    // Private contributions only counted when using the user's own token
     const privateContribs = accessToken
       ? (user?.contributionsCollection?.restrictedContributionsCount || 0)
       : 0;
 
     return {
       contributions: publicContribs + privateContribs,
-      // Only repos they actually created — forks don't count
       repos: user?.ownedRepos?.totalCount || 5,
       followers: user?.followers?.totalCount || 0,
       avatarUrl: user?.avatarUrl || null,
@@ -56,7 +54,7 @@ export async function getDevStats(username: string, accessToken?: string) {
 export async function syncUserStats(username: string, accessToken?: string) {
   const stats = await getDevStats(username, accessToken);
 
-  await supabase.from('developers').upsert({
+  await supabaseServer.from('developers').upsert({
     username,
     avatar_url: stats.avatarUrl,
     contributions: stats.contributions,
