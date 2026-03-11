@@ -1,10 +1,21 @@
 "use client";
 import { RigidBody } from "@react-three/rapier";
 import { Text, Html } from "@react-three/drei";
-import { useRef, useMemo, useState } from "react";
+import { useRef, useMemo, useState, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { createPortal } from "react-dom";
+
+// Inject animation CSS once into document head — never inside R3F tree
+if (typeof document !== 'undefined') {
+  const id = 'git-world-styles';
+  if (!document.getElementById(id)) {
+    const s = document.createElement('style');
+    s.id = id;
+    s.textContent = `@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`;
+    document.head.appendChild(s);
+  }
+}
 
 function usernameToHue(username: string): number {
   let hash = 0;
@@ -44,10 +55,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
       boxShadow: `0 -8px 40px ${hex}44`,
       animation: 'slideUp 0.3s ease-out',
     }}>
-      <style>{`
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-      `}</style>
-
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ width: 40, height: 4, background: '#333', borderRadius: 2, margin: '0 auto' }} />
         <button onClick={onClose} style={{
@@ -55,7 +62,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
           background: 'none', border: 'none', color: '#555', fontSize: 20, cursor: 'pointer'
         }}>✕</button>
       </div>
-
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
         {dev.avatar_url && (
           <img src={dev.avatar_url} alt={dev.username} style={{
@@ -72,27 +78,22 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
           </div>
         </div>
       </div>
-
       <div style={{
         background: '#111827', borderRadius: 10, padding: '10px 14px',
         border: `1px solid ${hex}44`, marginBottom: 14
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ color: hex, fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>
-            LV {level} · {title}
-          </span>
+          <span style={{ color: hex, fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>LV {level} · {title}</span>
           <span style={{ color: '#555', fontSize: 10 }}>{xp.toLocaleString()} XP</span>
         </div>
         <div style={{ background: '#1f2937', borderRadius: 4, height: 6, overflow: 'hidden' }}>
           <div style={{
             width: `${progress}%`, height: '100%',
             background: `linear-gradient(90deg, ${hex}, ${hex}aa)`,
-            boxShadow: `0 0 8px ${hex}`,
             transition: 'width 1s ease',
           }} />
         </div>
       </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
         {[
           { label: 'COMMITS', value: (dev.contributions || 0).toLocaleString() },
@@ -108,7 +109,6 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
           </div>
         ))}
       </div>
-
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           onClick={() => window.open(`https://github.com/${dev.username}`, '_blank')}
@@ -117,24 +117,16 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
             border: 'none', borderRadius: 8, fontFamily: 'monospace',
             fontSize: 11, fontWeight: 900, letterSpacing: 2, cursor: 'pointer',
           }}
-        >
-          VIEW GITHUB →
-        </button>
-        <button
-          onClick={onClose}
-          style={{
-            flex: 1, padding: '12px', background: 'transparent',
-            border: `1px solid ${hex}44`, color: '#666', borderRadius: 8,
-            fontFamily: 'monospace', fontSize: 11, letterSpacing: 2, cursor: 'pointer',
-          }}
-        >
-          CLOSE
-        </button>
+        >VIEW GITHUB →</button>
+        <button onClick={onClose} style={{
+          flex: 1, padding: '12px', background: 'transparent',
+          border: `1px solid ${hex}44`, color: '#666', borderRadius: 8,
+          fontFamily: 'monospace', fontSize: 11, letterSpacing: 2, cursor: 'pointer',
+        }}>CLOSE</button>
       </div>
     </div>
   );
 
-  // ✅ Portal renders card into document.body — completely outside R3F canvas
   if (typeof document === 'undefined') return null;
   return createPortal(card, document.body);
 }
@@ -170,9 +162,8 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
     { rot: [0, Math.PI / 2, 0] as [number,number,number], pos: [width / 2 + 0.02, 0, 0] as [number,number,number] },
     { rot: [0, -Math.PI / 2, 0] as [number,number,number], pos: [-(width / 2 + 0.02), 0, 0] as [number,number,number] },
   ];
-
   return (
-    <>
+    <group>
       {faces.map((face, fi) =>
         Array.from({ length: rows }).map((_, ri) =>
           Array.from({ length: cols }).map((_, ci) => {
@@ -191,20 +182,14 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
                 ]}
                 rotation={face.rot}
               >
-                <planeGeometry args={[winW * 0.65, 0.7 * 0.75]} />
-                <meshStandardMaterial
-                  color={hex}
-                  emissive={hex}
-                  emissiveIntensity={isElite ? 5 : 3}
-                  transparent
-                  opacity={0.9}
-                />
+                <planeGeometry args={[winW * 0.65, 0.52]} />
+                <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 5 : 3} transparent opacity={0.9} />
               </mesh>
             );
           })
         )
       )}
-    </>
+    </group>
   );
 }
 
@@ -213,10 +198,7 @@ export default function DevBuilding({ dev, position, theme }: any) {
   if (!dev) return null;
 
   const hue = usernameToHue(dev.username || "dev");
-
-  const themeColors: Record<string, number> = {
-    sunset: 30, neon: 280, emerald: 140, midnight: 210
-  };
+  const themeColors: Record<string, number> = { sunset: 30, neon: 280, emerald: 140, midnight: 210 };
   const effectiveHue = theme && themeColors[theme] ? (hue + themeColors[theme]) % 360 : hue;
 
   const color = useMemo(() => new THREE.Color().setHSL(effectiveHue / 360, 0.9, 0.62), [effectiveHue]);
@@ -238,13 +220,7 @@ export default function DevBuilding({ dev, position, theme }: any) {
           onClick={(e) => { e.stopPropagation(); setShowCard(true); }}
         >
           <boxGeometry args={[width, height, width]} />
-          <meshStandardMaterial
-            color={colorDark}
-            emissive={color}
-            emissiveIntensity={isElite ? 0.32 : 0.16}
-            roughness={0.15}
-            metalness={0.95}
-          />
+          <meshStandardMaterial color={colorDark} emissive={color} emissiveIntensity={isElite ? 0.32 : 0.16} roughness={0.15} metalness={0.95} />
         </mesh>
 
         <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
@@ -264,10 +240,6 @@ export default function DevBuilding({ dev, position, theme }: any) {
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
           <circleGeometry args={[width * 1.1, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.15} />
-        </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-          <ringGeometry args={[width / 2, width * 1.1, 32]} />
-          <meshBasicMaterial color={hex} transparent opacity={0.28} />
         </mesh>
 
         <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width * 3} decay={2} />
@@ -294,7 +266,6 @@ export default function DevBuilding({ dev, position, theme }: any) {
         </Text>
       </RigidBody>
 
-      {/* ✅ ProfileCard is OUTSIDE RigidBody — portaled to document.body */}
       {showCard && <ProfileCard dev={dev} hex={hex} onClose={() => setShowCard(false)} />}
     </>
   );

@@ -1,7 +1,6 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Stars, useProgress, Grid } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
@@ -12,7 +11,8 @@ import LoadingScreen from "./LoadingScreen";
 import DevBuilding from "./DevBuilding";
 import { ErrorBoundary } from "./ErrorBoundary";
 import * as THREE from "three";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useThree, extend } from "@react-three/fiber";
+import { Text, Html } from "@react-three/drei";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -22,17 +22,64 @@ export const THEMES = {
   neon:     { sky: "#080012", horizon: "#2a0050", fog: "#0d0018", fogDensity: 0.0025, ambient: "#1a0030", ground: "#0a0018", grid: "#1a0040", gridSection: "#2a0060" },
   emerald:  { sky: "#001a0a", horizon: "#004020", fog: "#001a08", fogDensity: 0.0026, ambient: "#002a10", ground: "#001208", grid: "#002a14", gridSection: "#003a1c" },
 };
-
 export type ThemeName = keyof typeof THEMES;
 
+// ── Pure Three.js fog/bg — no drei dependency ──
 function SceneFog({ theme }: { theme: ThemeName }) {
   const { scene } = useThree();
   const t = THEMES[theme];
   useEffect(() => {
-    scene.fog = new THREE.FogExp2(t.fog, t.fogDensity);
+    scene.fog = new THREE.FogExp2(new THREE.Color(t.fog), t.fogDensity);
     scene.background = new THREE.Color(t.sky);
-    return () => { scene.fog = null; };
-  }, [scene, theme, t]);
+    return () => { scene.fog = null; scene.background = null; };
+  }, [scene, theme]);
+  return null;
+}
+
+// ── Manual star field — no drei Stars ──
+function StarField({ count = 4000 }: { count?: number }) {
+  const ref = useRef<THREE.Points>(null);
+  const geo = useRef<THREE.BufferGeometry | null>(null);
+
+  useEffect(() => {
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 350 + Math.random() * 100;
+      positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+    }
+    if (ref.current) {
+      ref.current.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    }
+  }, [count]);
+
+  return (
+    <points ref={ref}>
+      <bufferGeometry />
+      <pointsMaterial color="#ffffff" size={0.7} sizeAttenuation transparent opacity={0.8} />
+    </points>
+  );
+}
+
+// ── Manual grid — no drei Grid ──
+function ManualGrid({ theme }: { theme: ThemeName }) {
+  const t = THEMES[theme];
+  const helper = useRef<THREE.GridHelper | null>(null);
+  const { scene } = useThree();
+
+  useEffect(() => {
+    const grid = new THREE.GridHelper(3000, 300, new THREE.Color(t.gridSection), new THREE.Color(t.grid));
+    (grid.material as THREE.Material).transparent = true;
+    (grid.material as THREE.Material).opacity = 0.4;
+    grid.position.y = 0.02;
+    helper.current = grid;
+    scene.add(grid);
+    return () => { scene.remove(grid); grid.dispose(); };
+  }, [scene, theme]);
+
   return null;
 }
 
@@ -48,10 +95,6 @@ function SunsetSky({ theme }: { theme: ThemeName }) {
         <ringGeometry args={[300, 800, 64]} />
         <meshBasicMaterial color={t.horizon} transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.5, 0]}>
-        <ringGeometry args={[100, 300, 64]} />
-        <meshBasicMaterial color={t.horizon} transparent opacity={0.2} side={THREE.DoubleSide} />
-      </mesh>
     </group>
   );
 }
@@ -64,10 +107,6 @@ function Moon({ theme }: { theme: ThemeName }) {
           <sphereGeometry args={[18, 32, 32]} />
           <meshStandardMaterial color="#ff8800" emissive="#ff5500" emissiveIntensity={1.5} roughness={1} />
         </mesh>
-        <mesh>
-          <sphereGeometry args={[28, 16, 16]} />
-          <meshBasicMaterial color="#ff4400" transparent opacity={0.08} side={THREE.BackSide} />
-        </mesh>
         <pointLight color="#ff6600" intensity={800} distance={1600} decay={2} />
       </group>
     );
@@ -77,10 +116,6 @@ function Moon({ theme }: { theme: ThemeName }) {
       <mesh>
         <sphereGeometry args={[9, 32, 32]} />
         <meshStandardMaterial color="#e8f4ff" emissive="#c8e0ff" emissiveIntensity={0.8} roughness={0.9} />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[13, 16, 16]} />
-        <meshBasicMaterial color="#aaccff" transparent opacity={0.06} side={THREE.BackSide} />
       </mesh>
       <pointLight color="#b0d4ff" intensity={600} distance={1400} decay={2} />
     </group>
@@ -93,26 +128,20 @@ function Tree({ position }: { position: [number, number, number] }) {
   const canopyR = 1.8 + (Math.abs(Math.cos(seed)) * 1.4);
   const hues = [145, 160, 130, 170, 120];
   const hue = hues[Math.abs(Math.floor(seed * 3.7)) % hues.length];
-  const sat = 45 + (Math.abs(Math.sin(seed * 2)) * 20);
-  const light = 14 + (Math.abs(Math.cos(seed * 3)) * 10);
-  const green = `hsl(${hue}, ${sat}%, ${light}%)`;
+  const green = `hsl(${hue}, 50%, 15%)`;
   return (
     <group position={position}>
-      <mesh position={[0, trunkH / 2, 0]} castShadow>
+      <mesh position={[0, trunkH / 2, 0]}>
         <cylinderGeometry args={[0.22, 0.32, trunkH, 6]} />
         <meshStandardMaterial color="#1a0c06" roughness={1} />
       </mesh>
-      <mesh position={[0, trunkH + canopyR * 0.5, 0]} castShadow>
+      <mesh position={[0, trunkH + canopyR * 0.5, 0]}>
         <coneGeometry args={[canopyR, canopyR * 1.5, 7]} />
         <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
       </mesh>
-      <mesh position={[0, trunkH + canopyR * 1.1, 0]} castShadow>
+      <mesh position={[0, trunkH + canopyR * 1.1, 0]}>
         <coneGeometry args={[canopyR * 0.68, canopyR * 1.2, 7]} />
         <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.12} />
-      </mesh>
-      <mesh position={[0, trunkH + canopyR * 1.65, 0]} castShadow>
-        <coneGeometry args={[canopyR * 0.38, canopyR * 0.85, 7]} />
-        <meshStandardMaterial color={green} roughness={0.85} emissive={green} emissiveIntensity={0.15} />
       </mesh>
     </group>
   );
@@ -132,16 +161,12 @@ function WaterBody({ position, sx, sz }: { position: [number,number,number], sx:
         <circleGeometry args={[1, 48]} />
         <meshStandardMaterial color="#041220" emissive="#0a4070" emissiveIntensity={0.45} roughness={0.02} metalness={0.98} transparent opacity={0.92} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <ringGeometry args={[0.9, 1.1, 48]} />
-        <meshBasicMaterial color="#1a8090" transparent opacity={0.6} />
-      </mesh>
     </group>
   );
 }
 
 function Fireflies() {
-  const count = 30;
+  const count = 20;
   const data = useRef(Array.from({ length: count }, (_, i) => ({
     pos: new THREE.Vector3((((i * 137.5) % 300) - 150), 1.2 + ((i * 73) % 9), (((i * 89.3) % 300) - 150)),
     phase: i * 0.8,
@@ -172,15 +197,10 @@ function Fireflies() {
 
 function buildTreePositions(): [number, number, number][] {
   const positions: [number, number, number][] = [];
-  for (let i = 0; i < 80; i++) {
-    const angle = (i / 80) * Math.PI * 2;
-    const r = 220 + (i % 3) * 30 + (i * 7.3) % 20;
+  for (let i = 0; i < 60; i++) {
+    const angle = (i / 60) * Math.PI * 2;
+    const r = 220 + (i % 3) * 30;
     positions.push([Math.cos(angle) * r, 0, Math.sin(angle) * r]);
-  }
-  for (let i = 0; i < 40; i++) {
-    const x = (((i * 137.508) % 340) - 170);
-    const z = (((i * 89.31) % 340) - 170);
-    if (Math.sqrt(x * x + z * z) > 80) positions.push([x, 0, z]);
   }
   return positions;
 }
@@ -208,9 +228,9 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
   return (
     <group>
       <SceneFog theme={theme} />
+      <ManualGrid theme={theme} />
+      <StarField count={theme === 'sunset' ? 2000 : 5000} />
       <SunsetSky theme={theme} />
-      <Stars radius={350} depth={80} count={theme === 'sunset' ? 2000 : 7000} factor={6} saturation={0.7} fade speed={0.12} />
-
       <Moon theme={theme} />
       <Fireflies />
 
@@ -220,7 +240,8 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
         intensity={theme === 'sunset' ? 1.8 : 1.4}
         color={theme === 'sunset' ? "#ff8844" : "#c0d8ff"}
         castShadow
-        shadow-mapSize={[1024, 1024]}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
         shadow-camera-far={600}
         shadow-camera-left={-200}
         shadow-camera-right={200}
@@ -267,17 +288,8 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
         </RigidBody>
       </Physics>
 
-      <Grid
-        position={[0, 0.02, 0]}
-        args={[3000, 3000]}
-        cellSize={10} cellThickness={0.4} cellColor={t.grid}
-        sectionSize={50} sectionThickness={1.0} sectionColor={t.gridSection}
-        fadeDistance={500} fadeStrength={1.2} infiniteGrid
-      />
-
       <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
       <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
-      <WaterBody position={[0, 0, 200]} sx={40} sz={25} />
 
       {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
     </group>
@@ -289,7 +301,6 @@ function ActivityFeed({ devs }: { devs: any[] }) {
     `⬡ ${d.username} · ${d.contributions} commits · ${d.repos} repos`
   ) || [];
   const doubled = [...items, ...items];
-
   return (
     <div style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
@@ -304,57 +315,62 @@ function ActivityFeed({ devs }: { devs: any[] }) {
       }}>
         {doubled.map((item, i) => <span key={i}>{item}</span>)}
       </div>
-      <style>{`
-        @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-      `}</style>
+      <style>{`@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }`}</style>
     </div>
   );
 }
 
 export default function WorldClient({ username }: { username: string }) {
   const [mounted, setMounted] = useState(false);
-  const { data: devs } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
-  const { progress } = useProgress();
+  const { data: devs, isLoading } = useSWR('/api/city', fetcher, { revalidateOnFocus: false });
   const [players, setPlayers] = useState<Record<string, any>>({});
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
+  const [sceneReady, setSceneReady] = useState(false);
   const room = useRef<any>(null);
 
   useEffect(() => {
     setMounted(true);
     setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    if (typeof window !== 'undefined') {
-      try {
-        room.current = supabase.channel('presence')
-          .on('broadcast', { event: 'move' }, ({ payload }: any) => {
-            if (payload?.username) setPlayers(p => ({ ...p, [payload.username]: payload }));
-          }).subscribe();
-      } catch (e) { console.error(e); }
-    }
+    try {
+      room.current = supabase.channel('presence')
+        .on('broadcast', { event: 'move' }, ({ payload }: any) => {
+          if (payload?.username) setPlayers(p => ({ ...p, [payload.username]: payload }));
+        }).subscribe();
+    } catch (e) { console.error(e); }
     return () => { room.current?.unsubscribe(); };
   }, []);
 
-  const isDataReady = mounted && devs;
+  const isDataReady = mounted && devs && !isLoading;
 
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
-      {!isDataReady && <LoadingScreen progress={progress || 10} />}
+      {!isDataReady && (
+        <LoadingScreen progress={isLoading ? 30 : 80} />
+      )}
+
+      {/* Canvas always mounts but scene only renders when data ready */}
+      {mounted && (
+        <ErrorBoundary>
+          <Canvas
+            shadows
+            gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
+            camera={{ fov: 65, position: [0, 8, 120], near: 0.1, far: 2000 }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+            onCreated={() => setSceneReady(true)}
+          >
+            <Suspense fallback={null}>
+              {isDataReady && (
+                <WorldScene devs={devs} flyMode={flyMode} theme={theme} />
+              )}
+            </Suspense>
+          </Canvas>
+        </ErrorBoundary>
+      )}
+
       {isDataReady && (
         <>
-          <ErrorBoundary>
-            <Canvas
-              shadows
-              gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
-              camera={{ fov: 65, position: [0, 8, 120], near: 0.1, far: 2000 }}
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-            >
-              <Suspense fallback={null}>
-                <WorldScene devs={devs} flyMode={flyMode} theme={theme} />
-              </Suspense>
-            </Canvas>
-          </ErrorBoundary>
-
           <HUD
             username={username}
             playersCount={Object.keys(players).length + 1}
@@ -366,7 +382,6 @@ export default function WorldClient({ username }: { username: string }) {
           />
           <Chat username={username} />
           <ActivityFeed devs={devs} />
-
           {isTouch && (
             <div style={{
               position: 'fixed', bottom: '36px', left: '8px', zIndex: 40,
