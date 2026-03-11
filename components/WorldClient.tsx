@@ -1,7 +1,7 @@
 "use client";
 import { Canvas } from "@react-three/fiber";
 import { Physics, RigidBody } from "@react-three/rapier";
-import { Stars, useProgress, Grid, Cloud } from "@react-three/drei";
+import { Stars, useProgress, Grid } from "@react-three/drei";
 import Ecctrl, { EcctrlJoystick } from "ecctrl";
 import { useEffect, useState, useRef, Suspense } from "react";
 import useSWR from "swr";
@@ -16,7 +16,6 @@ import { useFrame, useThree } from "@react-three/fiber";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-// Theme definitions
 export const THEMES = {
   sunset:   { sky: "#1a0a00", horizon: "#c0440a", fog: "#2a0f00", fogDensity: 0.0022, ambient: "#3a1a0a", ground: "#120800", grid: "#2a1000", gridSection: "#3a1800" },
   midnight: { sky: "#020818", horizon: "#0a2a40", fog: "#020c1a", fogDensity: 0.0028, ambient: "#0d2040", ground: "#04111e", grid: "#0a2035", gridSection: "#0e3060" },
@@ -33,20 +32,18 @@ function SceneFog({ theme }: { theme: ThemeName }) {
     scene.fog = new THREE.FogExp2(t.fog, t.fogDensity);
     scene.background = new THREE.Color(t.sky);
     return () => { scene.fog = null; };
-  }, [scene, theme]);
+  }, [scene, theme, t]);
   return null;
 }
 
 function SunsetSky({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
   return (
-    <>
-      {/* Sky dome */}
+    <group>
       <mesh scale={[-1, 1, 1]}>
         <sphereGeometry args={[790, 32, 32]} />
         <meshBasicMaterial color={t.sky} side={THREE.BackSide} />
       </mesh>
-      {/* Horizon glow band */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 2, 0]}>
         <ringGeometry args={[300, 800, 64]} />
         <meshBasicMaterial color={t.horizon} transparent opacity={0.4} side={THREE.DoubleSide} />
@@ -55,13 +52,12 @@ function SunsetSky({ theme }: { theme: ThemeName }) {
         <ringGeometry args={[100, 300, 64]} />
         <meshBasicMaterial color={t.horizon} transparent opacity={0.2} side={THREE.DoubleSide} />
       </mesh>
-    </>
+    </group>
   );
 }
 
 function Moon({ theme }: { theme: ThemeName }) {
   if (theme === 'sunset') {
-    // Sun for sunset theme
     return (
       <group position={[-200, 40, -400]}>
         <mesh>
@@ -163,14 +159,14 @@ function Fireflies() {
     });
   });
   return (
-    <>
+    <group>
       {data.current.map((d, i) => (
         <mesh key={i} ref={el => { refs.current[i] = el; }} position={d.pos}>
           <sphereGeometry args={[0.08, 4, 4]} />
           <meshBasicMaterial color="#88ffaa" transparent opacity={0.7} />
         </mesh>
       ))}
-    </>
+    </group>
   );
 }
 
@@ -190,15 +186,12 @@ function buildTreePositions(): [number, number, number][] {
 }
 const TREE_POSITIONS = buildTreePositions();
 
-// Dense city layout — buildings packed tight like a real skyline
 function buildCityLayout(count: number): [number, number, number][] {
   const positions: [number, number, number][] = [];
-  // Core downtown — very tight
   const cols = Math.ceil(Math.sqrt(count));
   for (let i = 0; i < count; i++) {
     const col = i % cols;
     const row = Math.floor(i / cols);
-    // Staggered grid with slight random offset (deterministic)
     const offsetX = ((i * 7.3) % 8) - 4;
     const offsetZ = ((i * 11.7) % 8) - 4;
     const x = (col - cols / 2) * 22 + offsetX;
@@ -213,13 +206,10 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
   const cityLayout = devs ? buildCityLayout(devs.length) : [];
 
   return (
-    <>
+    <group>
       <SceneFog theme={theme} />
       <SunsetSky theme={theme} />
       <Stars radius={350} depth={80} count={theme === 'sunset' ? 2000 : 7000} factor={6} saturation={0.7} fade speed={0.12} />
-
-      <Cloud position={[-80, 55, -220]} speed={0.1} opacity={0.18} color={theme === 'sunset' ? "#804020" : "#1a3060"} scale={4} />
-      <Cloud position={[130, 70, -280]} speed={0.08} opacity={0.14} color={theme === 'sunset' ? "#602010" : "#112244"} scale={3} />
 
       <Moon theme={theme} />
       <Fireflies />
@@ -237,7 +227,7 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
         shadow-camera-top={200}
         shadow-camera-bottom={-200}
       />
-      <pointLight position={[0, 3, -50]} intensity={700} color={theme === 'sunset' ? "#ff4400" : "#ff4400"} distance={400} decay={2} />
+      <pointLight position={[0, 3, -50]} intensity={700} color="#ff4400" distance={400} decay={2} />
       <pointLight position={[130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ff8800" : "#2255ff"} distance={450} decay={2} />
       <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
 
@@ -290,11 +280,10 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
       <WaterBody position={[0, 0, 200]} sx={40} sz={25} />
 
       {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
-    </>
+    </group>
   );
 }
 
-// Activity feed ticker
 function ActivityFeed({ devs }: { devs: any[] }) {
   const items = devs?.slice(0, 20).map(d =>
     `⬡ ${d.username} · ${d.contributions} commits · ${d.repos} repos`
