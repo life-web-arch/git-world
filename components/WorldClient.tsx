@@ -9,10 +9,10 @@ import HUD from "./HUD";
 import Chat from "./Chat";
 import LoadingScreen from "./LoadingScreen";
 import DevBuilding from "./DevBuilding";
+import ProfileCard from "./ProfileCard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import * as THREE from "three";
-import { useFrame, useThree, extend } from "@react-three/fiber";
-import { Text, Html } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -24,7 +24,6 @@ export const THEMES = {
 };
 export type ThemeName = keyof typeof THEMES;
 
-// ── Pure Three.js fog/bg — no drei dependency ──
 function SceneFog({ theme }: { theme: ThemeName }) {
   const { scene } = useThree();
   const t = THEMES[theme];
@@ -36,26 +35,21 @@ function SceneFog({ theme }: { theme: ThemeName }) {
   return null;
 }
 
-// ── Manual star field — no drei Stars ──
 function StarField({ count = 4000 }: { count?: number }) {
   const ref = useRef<THREE.Points>(null);
-  const geo = useRef<THREE.BufferGeometry | null>(null);
-
   useEffect(() => {
+    if (!ref.current) return;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       const r = 350 + Math.random() * 100;
-      positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = r * Math.cos(phi);
+      positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+      positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i*3+2] = r * Math.cos(phi);
     }
-    if (ref.current) {
-      ref.current.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    }
+    ref.current.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   }, [count]);
-
   return (
     <points ref={ref}>
       <bufferGeometry />
@@ -64,22 +58,17 @@ function StarField({ count = 4000 }: { count?: number }) {
   );
 }
 
-// ── Manual grid — no drei Grid ──
 function ManualGrid({ theme }: { theme: ThemeName }) {
   const t = THEMES[theme];
-  const helper = useRef<THREE.GridHelper | null>(null);
   const { scene } = useThree();
-
   useEffect(() => {
     const grid = new THREE.GridHelper(3000, 300, new THREE.Color(t.gridSection), new THREE.Color(t.grid));
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.4;
     grid.position.y = 0.02;
-    helper.current = grid;
     scene.add(grid);
-    return () => { scene.remove(grid); grid.dispose(); };
+    return () => { scene.remove(grid); };
   }, [scene, theme]);
-
   return null;
 }
 
@@ -150,10 +139,9 @@ function Tree({ position }: { position: [number, number, number] }) {
 function WaterBody({ position, sx, sz }: { position: [number,number,number], sx: number, sz: number }) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame((s) => {
-    if (ref.current) {
+    if (ref.current)
       (ref.current.material as THREE.MeshStandardMaterial).emissiveIntensity =
         0.45 + Math.sin(s.clock.elapsedTime * 0.5) * 0.2;
-    }
   });
   return (
     <group position={position} scale={[sx, 1, sz]}>
@@ -221,7 +209,10 @@ function buildCityLayout(count: number): [number, number, number][] {
   return positions;
 }
 
-function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, theme: ThemeName }) {
+function WorldScene({ devs, flyMode, theme, onSelectDev }: {
+  devs: any[], flyMode: boolean, theme: ThemeName,
+  onSelectDev: (dev: any, hex: string) => void
+}) {
   const t = THEMES[theme];
   const cityLayout = devs ? buildCityLayout(devs.length) : [];
 
@@ -277,6 +268,7 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
             dev={dev}
             position={cityLayout[i] || [i * 20, 0, 0]}
             theme={theme}
+            onSelect={onSelectDev}
           />
         ))}
 
@@ -290,7 +282,6 @@ function WorldScene({ devs, flyMode, theme }: { devs: any[], flyMode: boolean, t
 
       <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
       <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
-
       {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
     </group>
   );
@@ -327,7 +318,8 @@ export default function WorldClient({ username }: { username: string }) {
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
-  const [sceneReady, setSceneReady] = useState(false);
+  // ✅ selectedDev lives OUTSIDE Canvas — pure React DOM state
+  const [selectedDev, setSelectedDev] = useState<{ dev: any, hex: string } | null>(null);
   const room = useRef<any>(null);
 
   useEffect(() => {
@@ -344,13 +336,15 @@ export default function WorldClient({ username }: { username: string }) {
 
   const isDataReady = mounted && devs && !isLoading;
 
+  // ✅ This callback is passed INTO Canvas but only calls setState on the outside
+  const handleSelectDev = (dev: any, hex: string) => {
+    setSelectedDev({ dev, hex });
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
-      {!isDataReady && (
-        <LoadingScreen progress={isLoading ? 30 : 80} />
-      )}
+      {!isDataReady && <LoadingScreen progress={isLoading ? 30 : 80} />}
 
-      {/* Canvas always mounts but scene only renders when data ready */}
       {mounted && (
         <ErrorBoundary>
           <Canvas
@@ -358,15 +352,28 @@ export default function WorldClient({ username }: { username: string }) {
             gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
             camera={{ fov: 65, position: [0, 8, 120], near: 0.1, far: 2000 }}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-            onCreated={() => setSceneReady(true)}
           >
             <Suspense fallback={null}>
               {isDataReady && (
-                <WorldScene devs={devs} flyMode={flyMode} theme={theme} />
+                <WorldScene
+                  devs={devs}
+                  flyMode={flyMode}
+                  theme={theme}
+                  onSelectDev={handleSelectDev}
+                />
               )}
             </Suspense>
           </Canvas>
         </ErrorBoundary>
+      )}
+
+      {/* ✅ ProfileCard is 100% outside Canvas — pure DOM */}
+      {selectedDev && (
+        <ProfileCard
+          dev={selectedDev.dev}
+          hex={selectedDev.hex}
+          onClose={() => setSelectedDev(null)}
+        />
       )}
 
       {isDataReady && (
