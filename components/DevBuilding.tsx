@@ -1,12 +1,11 @@
 "use client";
 import { RigidBody } from "@react-three/rapier";
-import { Text, Html } from "@react-three/drei";
-import { useRef, useMemo, useState, useEffect } from "react";
+import { Text } from "@react-three/drei";
+import { useRef, useMemo, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { createPortal } from "react-dom";
 
-// Inject animation CSS once into document head — never inside R3F tree
 if (typeof document !== 'undefined') {
   const id = 'git-world-styles';
   if (!document.getElementById(id)) {
@@ -37,6 +36,40 @@ function getLevel(contributions: number, repos: number) {
   if (xp > 300)    return { level: 3,  title: "HACKER", xp };
   if (xp > 100)    return { level: 2,  title: "CODER", xp };
   return           { level: 1,  title: "NEWBIE", xp };
+}
+
+// Load avatar as a Three.js texture — no Html/div needed
+function useAvatarTexture(url: string | null) {
+  const texture = useMemo(() => {
+    if (!url) return null;
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, [url]);
+  return texture;
+}
+
+// Circular avatar rendered as a billboard mesh in the 3D scene
+function AvatarBillboard({ url, height, hex }: { url: string, height: number, hex: string }) {
+  const texture = useAvatarTexture(url);
+  const ref = useRef<THREE.Mesh>(null);
+
+  // Always face camera
+  useFrame(({ camera }) => {
+    if (ref.current) {
+      ref.current.quaternion.copy(camera.quaternion);
+    }
+  });
+
+  if (!texture) return null;
+
+  return (
+    <mesh ref={ref} position={[0, height + 4.5, 0]}>
+      <circleGeometry args={[1.0, 32]} />
+      <meshBasicMaterial map={texture} transparent side={THREE.DoubleSide} />
+    </mesh>
+  );
 }
 
 function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: () => void }) {
@@ -96,8 +129,8 @@ function ProfileCard({ dev, hex, onClose }: { dev: any, hex: string, onClose: ()
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
         {[
-          { label: 'COMMITS', value: (dev.contributions || 0).toLocaleString() },
-          { label: 'REPOS',   value: (dev.repos || 0).toLocaleString() },
+          { label: 'COMMITS',   value: (dev.contributions || 0).toLocaleString() },
+          { label: 'REPOS',     value: (dev.repos || 0).toLocaleString() },
           { label: 'FOLLOWERS', value: (dev.followers || 0).toLocaleString() },
         ].map(({ label, value }) => (
           <div key={label} style={{
@@ -157,10 +190,10 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
   const rows = Math.max(2, Math.floor(height / 2.5));
   const winW = (width * 0.7) / cols;
   const faces = [
-    { rot: [0, 0, 0] as [number,number,number], pos: [0, 0, width / 2 + 0.02] as [number,number,number] },
-    { rot: [0, Math.PI, 0] as [number,number,number], pos: [0, 0, -(width / 2 + 0.02)] as [number,number,number] },
-    { rot: [0, Math.PI / 2, 0] as [number,number,number], pos: [width / 2 + 0.02, 0, 0] as [number,number,number] },
-    { rot: [0, -Math.PI / 2, 0] as [number,number,number], pos: [-(width / 2 + 0.02), 0, 0] as [number,number,number] },
+    { rot: [0, 0, 0] as [number,number,number],           pos: [0, 0, width/2+0.02] as [number,number,number] },
+    { rot: [0, Math.PI, 0] as [number,number,number],     pos: [0, 0, -(width/2+0.02)] as [number,number,number] },
+    { rot: [0, Math.PI/2, 0] as [number,number,number],   pos: [width/2+0.02, 0, 0] as [number,number,number] },
+    { rot: [0, -Math.PI/2, 0] as [number,number,number],  pos: [-(width/2+0.02), 0, 0] as [number,number,number] },
   ];
   return (
     <group>
@@ -201,71 +234,80 @@ export default function DevBuilding({ dev, position, theme }: any) {
   const themeColors: Record<string, number> = { sunset: 30, neon: 280, emerald: 140, midnight: 210 };
   const effectiveHue = theme && themeColors[theme] ? (hue + themeColors[theme]) % 360 : hue;
 
-  const color = useMemo(() => new THREE.Color().setHSL(effectiveHue / 360, 0.9, 0.62), [effectiveHue]);
+  const color    = useMemo(() => new THREE.Color().setHSL(effectiveHue / 360, 0.9, 0.62), [effectiveHue]);
   const colorDark = useMemo(() => new THREE.Color().setHSL(effectiveHue / 360, 0.7, 0.09), [effectiveHue]);
   const hex = `#${color.getHexString()}`;
 
   const contributions = dev.contributions || 10;
-  const repos = dev.repos || 3;
-  const height = Math.max(6, Math.min(55, contributions / 60));
-  const width = Math.max(5, Math.min(14, 4 + repos / 4));
+  const repos   = dev.repos || 3;
+  const height  = Math.max(6, Math.min(55, contributions / 60));
+  const width   = Math.max(5, Math.min(14, 4 + repos / 4));
   const isElite = contributions > 300;
 
   return (
     <>
       <RigidBody type="fixed" position={position} colliders="cuboid">
+
+        {/* Main tower */}
         <mesh
           position={[0, height / 2, 0]}
           castShadow receiveShadow
           onClick={(e) => { e.stopPropagation(); setShowCard(true); }}
         >
           <boxGeometry args={[width, height, width]} />
-          <meshStandardMaterial color={colorDark} emissive={color} emissiveIntensity={isElite ? 0.32 : 0.16} roughness={0.15} metalness={0.95} />
+          <meshStandardMaterial
+            color={colorDark} emissive={color}
+            emissiveIntensity={isElite ? 0.32 : 0.16}
+            roughness={0.15} metalness={0.95}
+          />
         </mesh>
 
         <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
 
+        {/* Corner edges */}
         {([ [-1,-1], [-1,1], [1,-1], [1,1] ] as [number,number][]).map(([sx,sz], ci) => (
-          <mesh key={ci} position={[sx * (width/2 + 0.06), height/2, sz * (width/2 + 0.06)]}>
-            <boxGeometry args={[0.1, height + 0.3, 0.1]} />
+          <mesh key={ci} position={[sx*(width/2+0.06), height/2, sz*(width/2+0.06)]}>
+            <boxGeometry args={[0.1, height+0.3, 0.1]} />
             <meshStandardMaterial color={hex} emissive={hex} emissiveIntensity={isElite ? 7 : 4} roughness={0} />
           </mesh>
         ))}
 
-        <mesh position={[0, height + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[width * 0.45, width * 0.52, 32]} />
+        {/* Rooftop ring */}
+        <mesh position={[0, height+0.08, 0]} rotation={[-Math.PI/2, 0, 0]}>
+          <ringGeometry args={[width*0.45, width*0.52, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.9} />
         </mesh>
 
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-          <circleGeometry args={[width * 1.1, 32]} />
+        {/* Ground glow */}
+        <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.06, 0]}>
+          <circleGeometry args={[width*1.1, 32]} />
           <meshBasicMaterial color={hex} transparent opacity={0.15} />
         </mesh>
 
-        <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width * 3} decay={2} />
+        <pointLight position={[0, 1, 0]} color={hex} intensity={25} distance={width*3} decay={2} />
         <AnimatedBeacon height={height} color={color} />
 
+        {/* ✅ Avatar as billboard mesh — NO Html/div */}
         {dev.avatar_url && (
-          <Html position={[0, height + 4.5, 0]} transform distanceFactor={25} center occlude={false}>
-            <img src={dev.avatar_url} alt={dev.username} style={{
-              width: 38, height: 38, borderRadius: '50%',
-              border: `2px solid ${hex}`,
-              boxShadow: `0 0 12px ${hex}, 0 0 24px ${hex}66`,
-              pointerEvents: 'none', display: 'block',
-            }} onError={e => { e.currentTarget.style.display = 'none'; }} />
-          </Html>
+          <AvatarBillboard url={dev.avatar_url} height={height} hex={hex} />
         )}
 
-        <Text position={[0, height + 3.0, 0]} fontSize={0.88} color="white"
-          outlineWidth={0.08} outlineColor="#000" anchorX="center" anchorY="middle">
+        <Text
+          position={[0, height+3.0, 0]} fontSize={0.88} color="white"
+          outlineWidth={0.08} outlineColor="#000" anchorX="center" anchorY="middle"
+        >
           {dev.username}
         </Text>
-        <Text position={[0, height + 2.0, 0]} fontSize={0.48} color={hex}
-          outlineWidth={0.04} outlineColor="#000" anchorX="center" anchorY="middle">
+        <Text
+          position={[0, height+2.0, 0]} fontSize={0.48} color={hex}
+          outlineWidth={0.04} outlineColor="#000" anchorX="center" anchorY="middle"
+        >
           {`★ ${contributions} · ${repos} repos`}
         </Text>
+
       </RigidBody>
 
+      {/* Profile card portaled to document.body */}
       {showCard && <ProfileCard dev={dev} hex={hex} onClose={() => setShowCard(false)} />}
     </>
   );
