@@ -1,8 +1,6 @@
 import { supabase } from "./supabase";
 
 export async function getDevStats(username: string, accessToken?: string) {
-  // Use the user's own token if available (gets private commits)
-  // Fall back to our PAT for background syncs of other users (public only)
   const token = accessToken || process.env.GITHUB_PAT;
 
   const query = `
@@ -14,7 +12,11 @@ export async function getDevStats(username: string, accessToken?: string) {
           contributionCalendar { totalContributions }
           restrictedContributionsCount
         }
-        repositories(first: 1, ownerAffiliations: OWNER, isFork: false) {
+        ownedRepos: repositories(
+          first: 1,
+          ownerAffiliations: OWNER,
+          isFork: false
+        ) {
           totalCount
         }
       }
@@ -33,18 +35,16 @@ export async function getDevStats(username: string, accessToken?: string) {
     const json = await res.json();
     const user = json.data?.user;
 
-    // When using own token: totalContributions includes private ones
-    // restrictedContributionsCount = private contributions count (for reference)
     const publicContribs = user?.contributionsCollection?.contributionCalendar?.totalContributions || 10;
+    // Private contributions only counted when using the user's own token
     const privateContribs = accessToken
       ? (user?.contributionsCollection?.restrictedContributionsCount || 0)
       : 0;
-    // Total = public + private (private only counted when user's own token is used)
-    const totalContributions = publicContribs + privateContribs;
 
     return {
-      contributions: totalContributions,
-      repos: user?.repositories?.totalCount || 5,
+      contributions: publicContribs + privateContribs,
+      // Only repos they actually created — forks don't count
+      repos: user?.ownedRepos?.totalCount || 5,
       followers: user?.followers?.totalCount || 0,
       avatarUrl: user?.avatarUrl || null,
     };
@@ -63,7 +63,6 @@ export async function syncUserStats(username: string, accessToken?: string) {
     repos: stats.repos,
     followers: stats.followers,
     stats_last_updated_at: new Date().toISOString(),
-    // Store token so future background syncs can also fetch private data
     ...(accessToken ? { github_access_token: accessToken } : {}),
   });
 }
