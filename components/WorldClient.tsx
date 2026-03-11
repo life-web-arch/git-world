@@ -209,9 +209,23 @@ function buildCityLayout(count: number): [number, number, number][] {
   return positions;
 }
 
-function WorldScene({ devs, flyMode, theme, onSelectDev }: {
+// This component signals when the ground RigidBody is ready
+function PhysicsReadyGate({ onReady }: { onReady: () => void }) {
+  const called = useRef(false);
+  useFrame(() => {
+    if (!called.current) {
+      called.current = true;
+      // Wait 3 frames so Rapier has fully initialized colliders
+      setTimeout(onReady, 120);
+    }
+  });
+  return null;
+}
+
+function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady }: {
   devs: any[], flyMode: boolean, theme: ThemeName,
-  onSelectDev: (dev: any, hex: string) => void
+  onSelectDev: (dev: any, hex: string) => void,
+  onPhysicsReady: () => void,
 }) {
   const t = THEMES[theme];
   const cityLayout = devs ? buildCityLayout(devs.length) : [];
@@ -244,23 +258,7 @@ function WorldScene({ devs, flyMode, theme, onSelectDev }: {
       <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
 
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-        <Ecctrl
-          animated={false}
-          jumpVel={flyMode ? 0 : 8}
-          maxVelLimit={flyMode ? 20 : 10}
-          camInitDis={-8} camMinDis={-3} camMaxDis={-15}
-          camInitDir={{ x: -0.15, y: 0 }}
-          position={[0, 4, 80]}
-        >
-          <mesh castShadow>
-            <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
-            <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
-          </mesh>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
-            <ringGeometry args={[0.28, 0.55, 16]} />
-            <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
-          </mesh>
-        </Ecctrl>
+        <PhysicsReadyGate onReady={onPhysicsReady} />
 
         {devs?.map((dev: any, i: number) => (
           <DevBuilding
@@ -284,6 +282,31 @@ function WorldScene({ devs, flyMode, theme, onSelectDev }: {
       <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
       {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
     </group>
+  );
+}
+
+// Player is in its own Physics context so it only mounts AFTER ground is confirmed ready
+function PlayerPhysics({ flyMode }: { flyMode: boolean }) {
+  return (
+    <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
+      <Ecctrl
+        animated={false}
+        jumpVel={flyMode ? 0 : 8}
+        maxVelLimit={flyMode ? 20 : 10}
+        camInitDis={-8} camMinDis={-3} camMaxDis={-15}
+        camInitDir={{ x: -0.15, y: 0 }}
+        position={[0, 4, 80]}
+      >
+        <mesh castShadow>
+          <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
+          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
+          <ringGeometry args={[0.28, 0.55, 16]} />
+          <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
+        </mesh>
+      </Ecctrl>
+    </Physics>
   );
 }
 
@@ -318,8 +341,9 @@ export default function WorldClient({ username }: { username: string }) {
   const [flyMode, setFlyMode] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
-  // ✅ selectedDev lives OUTSIDE Canvas — pure React DOM state
   const [selectedDev, setSelectedDev] = useState<{ dev: any, hex: string } | null>(null);
+  // physicsReady gates the player capsule — prevents falling through world on load
+  const [physicsReady, setPhysicsReady] = useState(false);
   const room = useRef<any>(null);
 
   useEffect(() => {
@@ -336,14 +360,14 @@ export default function WorldClient({ username }: { username: string }) {
 
   const isDataReady = mounted && devs && !isLoading;
 
-  // ✅ This callback is passed INTO Canvas but only calls setState on the outside
   const handleSelectDev = (dev: any, hex: string) => {
     setSelectedDev({ dev, hex });
   };
 
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
-      {!isDataReady && <LoadingScreen progress={isLoading ? 30 : 80} />}
+      {/* Loading screen hides until physics is ready — not just data */}
+      {!physicsReady && <LoadingScreen progress={!mounted ? 10 : isLoading ? 30 : !physicsReady ? 80 : 100} />}
 
       {mounted && (
         <ErrorBoundary>
@@ -355,19 +379,25 @@ export default function WorldClient({ username }: { username: string }) {
           >
             <Suspense fallback={null}>
               {isDataReady && (
-                <WorldScene
-                  devs={devs}
-                  flyMode={flyMode}
-                  theme={theme}
-                  onSelectDev={handleSelectDev}
-                />
+                <>
+                  <WorldScene
+                    devs={devs}
+                    flyMode={flyMode}
+                    theme={theme}
+                    onSelectDev={handleSelectDev}
+                    onPhysicsReady={() => setPhysicsReady(true)}
+                  />
+                  {/* Player capsule only spawns after ground collider confirmed ready */}
+                  {physicsReady && (
+                    <PlayerPhysics flyMode={flyMode} />
+                  )}
+                </>
               )}
             </Suspense>
           </Canvas>
         </ErrorBoundary>
       )}
 
-      {/* ✅ ProfileCard is 100% outside Canvas — pure DOM */}
       {selectedDev && (
         <ProfileCard
           dev={selectedDev.dev}
@@ -376,7 +406,7 @@ export default function WorldClient({ username }: { username: string }) {
         />
       )}
 
-      {isDataReady && (
+      {isDataReady && physicsReady && (
         <>
           <HUD
             username={username}
@@ -389,6 +419,7 @@ export default function WorldClient({ username }: { username: string }) {
           />
           <Chat username={username} />
           <ActivityFeed devs={devs} />
+          {/* Joystick only appears after physics is ready — can't cause premature input */}
           {isTouch && (
             <div style={{
               position: 'fixed', bottom: '36px', left: '8px', zIndex: 40,
