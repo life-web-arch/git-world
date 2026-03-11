@@ -79,10 +79,7 @@ function AvatarBillboard({ url, height, onSelect }: { url: string, height: numbe
 
   useEffect(() => {
     if (!matRef.current) return;
-    // Dispose old texture from GPU first
-    if (matRef.current.map) {
-      matRef.current.map.dispose();
-    }
+    if (matRef.current.map) matRef.current.map.dispose();
     const tex = new THREE.TextureLoader().load(url, () => {
       if (matRef.current) {
         matRef.current.map = tex;
@@ -99,11 +96,7 @@ function AvatarBillboard({ url, height, onSelect }: { url: string, height: numbe
   });
 
   return (
-    <mesh
-      ref={ref}
-      position={[0, height + 4.5, 0]}
-      onClick={(e) => { e.stopPropagation(); onSelect(); }}
-    >
+    <mesh ref={ref} position={[0, height + 4.5, 0]} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
       <circleGeometry args={[1.0, 32]} />
       <meshBasicMaterial ref={matRef} transparent side={THREE.DoubleSide} />
     </mesh>
@@ -114,41 +107,51 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
   username: string, stats: string, height: number, hex: string, onSelect: () => void
 }) {
   const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  // renderCount lets us see on the label itself how many times it has redrawn
+  const renderCount = useRef(0);
 
   useEffect(() => {
     if (!matRef.current) return;
+    renderCount.current += 1;
 
-    // Dispose old texture from GPU
-    if (matRef.current.map) {
-      matRef.current.map.dispose();
-    }
+    if (matRef.current.map) matRef.current.map.dispose();
 
-    // Build fresh canvas texture
     const canvas = document.createElement('canvas');
     canvas.width = 512;
-    canvas.height = 128;
+    canvas.height = 160;
     const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 512, 128);
+    ctx.clearRect(0, 0, 512, 160);
+
+    // Username
     ctx.font = 'bold 52px monospace';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    ctx.shadowColor = '#000000';
+    ctx.shadowColor = '#000';
     ctx.shadowBlur = 10;
     ctx.fillText(username, 256, 54);
+
+    // Stats
     ctx.font = '30px monospace';
     ctx.fillStyle = hex;
     ctx.shadowBlur = 6;
-    ctx.fillText(stats, 256, 98);
+    ctx.fillText(stats, 256, 96);
+
+    // DEBUG LINE — shows render count + timestamp so you can confirm updates are hitting
+    const now = new Date().toLocaleTimeString();
+    ctx.font = '20px monospace';
+    ctx.fillStyle = '#ff0';
+    ctx.shadowBlur = 0;
+    ctx.fillText(`render#${renderCount.current} @ ${now}`, 256, 130);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
-
-    // Push directly onto the material — bypasses React render cycle entirely
     matRef.current.map = tex;
     matRef.current.needsUpdate = true;
 
+    console.log(`[NameLabel] ${username} redrawn — render#${renderCount.current}, stats="${stats}"`);
+
     return () => { tex.dispose(); };
-  }, [username, stats, hex]); // fires whenever contributions/repos change
+  }, [username, stats, hex]);
 
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ camera }) => {
@@ -156,12 +159,8 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
   });
 
   return (
-    <mesh
-      ref={ref}
-      position={[0, height + 2.2, 0]}
-      onClick={(e) => { e.stopPropagation(); onSelect(); }}
-    >
-      <planeGeometry args={[8, 2]} />
+    <mesh ref={ref} position={[0, height + 2.2, 0]} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
+      <planeGeometry args={[8, 2.5]} />
       <meshBasicMaterial ref={matRef} transparent depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
@@ -189,18 +188,9 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
 
   return (
     <RigidBody type="fixed" position={position} colliders="cuboid">
-
-      <mesh
-        position={[0, height / 2, 0]}
-        castShadow receiveShadow
-        onClick={(e) => { e.stopPropagation(); handleSelect(); }}
-      >
+      <mesh position={[0, height / 2, 0]} castShadow receiveShadow onClick={(e) => { e.stopPropagation(); handleSelect(); }}>
         <boxGeometry args={[width, height, width]} />
-        <meshStandardMaterial
-          color={colorDark} emissive={color}
-          emissiveIntensity={isElite ? 0.32 : 0.16}
-          roughness={0.15} metalness={0.95}
-        />
+        <meshStandardMaterial color={colorDark} emissive={color} emissiveIntensity={isElite ? 0.32 : 0.16} roughness={0.15} metalness={0.95} />
       </mesh>
 
       <WindowGrid width={width} height={height} hex={hex} isElite={isElite} />
@@ -229,14 +219,7 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
         <AvatarBillboard url={dev.avatar_url} height={height} onSelect={handleSelect} />
       )}
 
-      <NameLabel
-        username={dev.username}
-        stats={stats}
-        height={height}
-        hex={hex}
-        onSelect={handleSelect}
-      />
-
+      <NameLabel username={dev.username} stats={stats} height={height} hex={hex} onSelect={handleSelect} />
     </RigidBody>
   );
 }
