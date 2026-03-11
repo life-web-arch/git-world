@@ -209,23 +209,26 @@ function buildCityLayout(count: number): [number, number, number][] {
   return positions;
 }
 
-// This component signals when the ground RigidBody is ready
-function PhysicsReadyGate({ onReady }: { onReady: () => void }) {
-  const called = useRef(false);
+// Counts rendered frames — after N frames Rapier colliders are guaranteed registered
+function FrameGate({ onReady, frames = 5 }: { onReady: () => void, frames?: number }) {
+  const count = useRef(0);
+  const done = useRef(false);
   useFrame(() => {
-    if (!called.current) {
-      called.current = true;
-      // Wait 3 frames so Rapier has fully initialized colliders
-      setTimeout(onReady, 120);
+    if (done.current) return;
+    count.current += 1;
+    if (count.current >= frames) {
+      done.current = true;
+      onReady();
     }
   });
   return null;
 }
 
-function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady }: {
+function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady, playerReady }: {
   devs: any[], flyMode: boolean, theme: ThemeName,
   onSelectDev: (dev: any, hex: string) => void,
   onPhysicsReady: () => void,
+  playerReady: boolean,
 }) {
   const t = THEMES[theme];
   const cityLayout = devs ? buildCityLayout(devs.length) : [];
@@ -257,8 +260,19 @@ function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady }: {
       <pointLight position={[130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ff8800" : "#2255ff"} distance={450} decay={2} />
       <pointLight position={[-130, 25, -180]} intensity={400} color={theme === 'sunset' ? "#ffaa00" : "#00ddbb"} distance={450} decay={2} />
 
+      {/* Single Physics world — ground + buildings + player all share same Rapier instance */}
       <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-        <PhysicsReadyGate onReady={onPhysicsReady} />
+
+        {/* Ground must be first so collider registers before player spawns */}
+        <RigidBody type="fixed" colliders="cuboid">
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
+            <planeGeometry args={[3000, 3000]} />
+            <meshStandardMaterial color={t.ground} roughness={0.96} metalness={0.1} />
+          </mesh>
+        </RigidBody>
+
+        {/* Gate fires onPhysicsReady after 5 rendered frames — ground collider is guaranteed by then */}
+        <FrameGate onReady={onPhysicsReady} frames={5} />
 
         {devs?.map((dev: any, i: number) => (
           <DevBuilding
@@ -270,43 +284,32 @@ function WorldScene({ devs, flyMode, theme, onSelectDev, onPhysicsReady }: {
           />
         ))}
 
-        <RigidBody type="fixed">
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[3000, 3000]} />
-            <meshStandardMaterial color={t.ground} roughness={0.96} metalness={0.1} />
-          </mesh>
-        </RigidBody>
+        {/* Player only mounts after FrameGate fires — so it always lands on solid ground */}
+        {playerReady && (
+          <Ecctrl
+            animated={false}
+            jumpVel={flyMode ? 0 : 8}
+            maxVelLimit={flyMode ? 20 : 10}
+            camInitDis={-8} camMinDis={-3} camMaxDis={-15}
+            camInitDir={{ x: -0.15, y: 0 }}
+            position={[0, 6, 80]}
+          >
+            <mesh castShadow>
+              <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
+              <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
+              <ringGeometry args={[0.28, 0.55, 16]} />
+              <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
+            </mesh>
+          </Ecctrl>
+        )}
       </Physics>
 
       <WaterBody position={[110, 0, 110]} sx={28} sz={18} />
       <WaterBody position={[-130, 0, 130]} sx={22} sz={15} />
       {TREE_POSITIONS.map((pos, i) => <Tree key={i} position={pos} />)}
     </group>
-  );
-}
-
-// Player is in its own Physics context so it only mounts AFTER ground is confirmed ready
-function PlayerPhysics({ flyMode }: { flyMode: boolean }) {
-  return (
-    <Physics gravity={[0, flyMode ? 0 : -20, 0]}>
-      <Ecctrl
-        animated={false}
-        jumpVel={flyMode ? 0 : 8}
-        maxVelLimit={flyMode ? 20 : 10}
-        camInitDis={-8} camMinDis={-3} camMaxDis={-15}
-        camInitDir={{ x: -0.15, y: 0 }}
-        position={[0, 4, 80]}
-      >
-        <mesh castShadow>
-          <capsuleGeometry args={[0.25, 0.6, 8, 16]} />
-          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={2.5} roughness={0.2} metalness={0.5} />
-        </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.62, 0]}>
-          <ringGeometry args={[0.28, 0.55, 16]} />
-          <meshBasicMaterial color="#22c55e" transparent opacity={0.7} />
-        </mesh>
-      </Ecctrl>
-    </Physics>
   );
 }
 
@@ -342,7 +345,7 @@ export default function WorldClient({ username }: { username: string }) {
   const [isTouch, setIsTouch] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('sunset');
   const [selectedDev, setSelectedDev] = useState<{ dev: any, hex: string } | null>(null);
-  // physicsReady gates the player capsule — prevents falling through world on load
+  // physicsReady: ground collider confirmed → safe to spawn player
   const [physicsReady, setPhysicsReady] = useState(false);
   const room = useRef<any>(null);
 
@@ -359,15 +362,16 @@ export default function WorldClient({ username }: { username: string }) {
   }, []);
 
   const isDataReady = mounted && devs && !isLoading;
+  const handleSelectDev = (dev: any, hex: string) => setSelectedDev({ dev, hex });
 
-  const handleSelectDev = (dev: any, hex: string) => {
-    setSelectedDev({ dev, hex });
-  };
+  // Loading screen progress
+  const loadProgress = !mounted ? 10 : isLoading ? 35 : !physicsReady ? 75 : 100;
 
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: '#020818', overflow: 'hidden' }}>
-      {/* Loading screen hides until physics is ready — not just data */}
-      {!physicsReady && <LoadingScreen progress={!mounted ? 10 : isLoading ? 30 : !physicsReady ? 80 : 100} />}
+
+      {/* Hide loading screen only when physics + player are truly ready */}
+      {!physicsReady && <LoadingScreen progress={loadProgress} />}
 
       {mounted && (
         <ErrorBoundary>
@@ -379,19 +383,14 @@ export default function WorldClient({ username }: { username: string }) {
           >
             <Suspense fallback={null}>
               {isDataReady && (
-                <>
-                  <WorldScene
-                    devs={devs}
-                    flyMode={flyMode}
-                    theme={theme}
-                    onSelectDev={handleSelectDev}
-                    onPhysicsReady={() => setPhysicsReady(true)}
-                  />
-                  {/* Player capsule only spawns after ground collider confirmed ready */}
-                  {physicsReady && (
-                    <PlayerPhysics flyMode={flyMode} />
-                  )}
-                </>
+                <WorldScene
+                  devs={devs}
+                  flyMode={flyMode}
+                  theme={theme}
+                  onSelectDev={handleSelectDev}
+                  onPhysicsReady={() => setPhysicsReady(true)}
+                  playerReady={physicsReady}
+                />
               )}
             </Suspense>
           </Canvas>
@@ -406,6 +405,7 @@ export default function WorldClient({ username }: { username: string }) {
         />
       )}
 
+      {/* HUD, chat, joystick — all gated behind physicsReady so no input before world exists */}
       {isDataReady && physicsReady && (
         <>
           <HUD
@@ -419,7 +419,6 @@ export default function WorldClient({ username }: { username: string }) {
           />
           <Chat username={username} />
           <ActivityFeed devs={devs} />
-          {/* Joystick only appears after physics is ready — can't cause premature input */}
           {isTouch && (
             <div style={{
               position: 'fixed', bottom: '36px', left: '8px', zIndex: 40,
