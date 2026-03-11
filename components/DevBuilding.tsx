@@ -1,6 +1,6 @@
 "use client";
 import { RigidBody } from "@react-three/rapier";
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -75,17 +75,29 @@ function WindowGrid({ width, height, hex, isElite }: { width: number, height: nu
 }
 
 function AvatarBillboard({ url, height, onSelect }: { url: string, height: number, onSelect: () => void }) {
-  // url in deps — if avatar_url changes in DB, texture regenerates
-  const texture = useMemo(() => {
-    const tex = new THREE.TextureLoader().load(url);
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  useEffect(() => {
+    if (!matRef.current) return;
+    // Dispose old texture from GPU first
+    if (matRef.current.map) {
+      matRef.current.map.dispose();
+    }
+    const tex = new THREE.TextureLoader().load(url, () => {
+      if (matRef.current) {
+        matRef.current.map = tex;
+        matRef.current.needsUpdate = true;
+      }
+    });
     tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
+    return () => { tex.dispose(); };
   }, [url]);
 
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ camera }) => {
     if (ref.current) ref.current.quaternion.copy(camera.quaternion);
   });
+
   return (
     <mesh
       ref={ref}
@@ -93,7 +105,7 @@ function AvatarBillboard({ url, height, onSelect }: { url: string, height: numbe
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
     >
       <circleGeometry args={[1.0, 32]} />
-      <meshBasicMaterial map={texture} transparent side={THREE.DoubleSide} />
+      <meshBasicMaterial ref={matRef} transparent side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -101,8 +113,17 @@ function AvatarBillboard({ url, height, onSelect }: { url: string, height: numbe
 function NameLabel({ username, stats, height, hex, onSelect }: {
   username: string, stats: string, height: number, hex: string, onSelect: () => void
 }) {
-  // stats + hex in deps — if contributions/repos change, canvas redraws
-  const texture = useMemo(() => {
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  useEffect(() => {
+    if (!matRef.current) return;
+
+    // Dispose old texture from GPU
+    if (matRef.current.map) {
+      matRef.current.map.dispose();
+    }
+
+    // Build fresh canvas texture
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 128;
@@ -118,10 +139,16 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
     ctx.fillStyle = hex;
     ctx.shadowBlur = 6;
     ctx.fillText(stats, 256, 98);
+
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
-    return tex;
-  }, [username, stats, hex]); // stats changes → texture regenerates
+
+    // Push directly onto the material — bypasses React render cycle entirely
+    matRef.current.map = tex;
+    matRef.current.needsUpdate = true;
+
+    return () => { tex.dispose(); };
+  }, [username, stats, hex]); // fires whenever contributions/repos change
 
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ camera }) => {
@@ -135,7 +162,7 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
     >
       <planeGeometry args={[8, 2]} />
-      <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+      <meshBasicMaterial ref={matRef} transparent depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -156,7 +183,6 @@ export default function DevBuilding({ dev, position, theme, onSelect }: any) {
   const height  = Math.max(6, Math.min(55, contributions / 60));
   const width   = Math.max(5, Math.min(14, 4 + repos / 4));
   const isElite = contributions > 300;
-  // stats string is the dep that carries contribution+repo data into NameLabel
   const stats   = `★ ${contributions} · ${repos} repos`;
 
   const handleSelect = () => onSelect(dev, hex);
