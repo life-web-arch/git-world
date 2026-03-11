@@ -26,3 +26,6 @@ ADD COLUMN IF NOT EXISTS followers integer DEFAULT 0;
 
 -- Migration: enable Realtime on developers table
 ALTER PUBLICATION supabase_realtime ADD TABLE public.developers;
+
+-- Migration: store user's GitHub OAuth token for private contribution fetching
+ALTER TABLE public.developers ADD COLUMN IF NOT EXISTS github_access_token TEXT;
