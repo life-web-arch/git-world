@@ -107,48 +107,31 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
   username: string, stats: string, height: number, hex: string, onSelect: () => void
 }) {
   const matRef = useRef<THREE.MeshBasicMaterial>(null);
-  // renderCount lets us see on the label itself how many times it has redrawn
-  const renderCount = useRef(0);
 
   useEffect(() => {
     if (!matRef.current) return;
-    renderCount.current += 1;
-
     if (matRef.current.map) matRef.current.map.dispose();
 
     const canvas = document.createElement('canvas');
     canvas.width = 512;
-    canvas.height = 160;
+    canvas.height = 128;
     const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 512, 160);
-
-    // Username
+    ctx.clearRect(0, 0, 512, 128);
     ctx.font = 'bold 52px monospace';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    ctx.shadowColor = '#000';
+    ctx.shadowColor = '#000000';
     ctx.shadowBlur = 10;
     ctx.fillText(username, 256, 54);
-
-    // Stats
     ctx.font = '30px monospace';
     ctx.fillStyle = hex;
     ctx.shadowBlur = 6;
-    ctx.fillText(stats, 256, 96);
-
-    // DEBUG LINE — shows render count + timestamp so you can confirm updates are hitting
-    const now = new Date().toLocaleTimeString();
-    ctx.font = '20px monospace';
-    ctx.fillStyle = '#ff0';
-    ctx.shadowBlur = 0;
-    ctx.fillText(`render#${renderCount.current} @ ${now}`, 256, 130);
+    ctx.fillText(stats, 256, 98);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
     matRef.current.map = tex;
     matRef.current.needsUpdate = true;
-
-    console.log(`[NameLabel] ${username} redrawn — render#${renderCount.current}, stats="${stats}"`);
 
     return () => { tex.dispose(); };
   }, [username, stats, hex]);
@@ -160,7 +143,7 @@ function NameLabel({ username, stats, height, hex, onSelect }: {
 
   return (
     <mesh ref={ref} position={[0, height + 2.2, 0]} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
-      <planeGeometry args={[8, 2.5]} />
+      <planeGeometry args={[8, 2]} />
       <meshBasicMaterial ref={matRef} transparent depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
