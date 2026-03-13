@@ -84,7 +84,8 @@ TABLE: public.developers
   - last_seen        TIMESTAMPTZ DEFAULT now()
   - stats_last_updated_at TIMESTAMPTZ
 
-RLS: DISABLED (MVP mode — server-side upserts via service role)
+RLS: Make sure RLS is properly implemented across everything wherever needed for a very famous potential website, to keep it safe from prying hacking eyes
+--> Make sure the best cyber-security measures are practiced
 Realtime: Table used for live presence via Supabase channel broadcasts
 
 HOW TO ADD A NEW COLUMN (example workflow):
